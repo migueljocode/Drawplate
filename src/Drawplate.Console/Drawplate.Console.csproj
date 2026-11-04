@@ -3,10 +3,10 @@
   <PropertyGroup>
     <AssemblyName>drawplate</AssemblyName>
     <OutputType>Exe</OutputType>
-    <PublishAot>true</PublishAot>
     <OptimizationPreference>Size</OptimizationPreference>
     <StripSymbols>true</StripSymbols>
     <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <StartupObject>Drawplate.Console.Program</StartupObject>
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
