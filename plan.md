@@ -12,7 +12,7 @@ Never load the whole file into the agent. For every task load: **section A**, **
 
 | Phase | State | Owner approval |
 |---|---|---|
-| P0 Baseline and repo | [ ] | [ ] |
+| P0 Baseline and repo | [x] | APPROVED 2026-11-04 |
 | P1 Scaffold and guardrails | [ ] | [ ] |
 | P2 Core domain | [ ] | [ ] |
 | P3 Process layer, locator, detection | [ ] | [ ] |
