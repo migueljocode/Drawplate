@@ -33,3 +33,8 @@ dotnet_style_coalesce_expression = true
 dotnet_style_object_initializer = true
 dotnet_style_collection_initializer = true
 dotnet_style_definite_variable_declaration_for_reference_types = true
+dotnet_diagnostic.CA1707.severity = none
+
+# xUnit requires public test classes (xUnit1000); CA1515 does not apply to test classes.
+[tests/Drawplate.Tests/**/*.cs]
+dotnet_diagnostic.CA1515.severity = none
