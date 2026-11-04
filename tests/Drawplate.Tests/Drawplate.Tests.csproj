@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Drawplate.Models\Drawplate.Models.csproj" />
+    <ProjectReference Include="..\..\src\Drawplate.Services\Drawplate.Services.csproj" />
+    <ProjectReference Include="..\..\src\Drawplate.Console\Drawplate.Console.csproj" />
+  </ItemGroup>
+
+</Project>

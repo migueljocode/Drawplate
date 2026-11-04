@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="../tests/Drawplate.Tests/Drawplate.Tests.csproj" />
+  <Project Path="../tests/FakeExe/FakeExe.csproj" />
+  <Project Path="Drawplate.Console/Drawplate.Console.csproj" />
+  <Project Path="Drawplate.Models/Drawplate.Models.csproj" />
+  <Project Path="Drawplate.Services/Drawplate.Services.csproj" />
+</Solution>

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>drawplate</AssemblyName>
+    <OutputType>Exe</OutputType>
+    <PublishAot>true</PublishAot>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <StripSymbols>true</StripSymbols>
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Drawplate.Models\Drawplate.Models.csproj" />
+    <ProjectReference Include="..\Drawplate.Services\Drawplate.Services.csproj" />
+  </ItemGroup>
+
+</Project>
