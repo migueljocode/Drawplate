@@ -148,29 +148,20 @@ public sealed class ProcessLauncher : IProcessLauncher
 
         public async Task<int> WaitAsync(CancellationToken ct)
         {
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            var waitTask = _process.WaitForExitAsync(cts.Token);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var waitTask = _process.WaitForExitAsync(linkedCts.Token);
 
             if (_options.Timeout is { } timeout)
             {
-                var delayTask = Task.Delay(timeout, cts.Token);
+                var delayTask = Task.Delay(timeout, linkedCts.Token);
                 var completed = await Task.WhenAny(waitTask, delayTask).ConfigureAwait(false);
-                if (completed == delayTask)
+                if (completed == delayTask && delayTask.IsCompletedSuccessfully)
                 {
                     _timedOut = true;
                     KillTree();
-                    try
-                    {
-                        await waitTask.ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                    }
                     return -1;
                 }
             }
-
-            cts.Token.ThrowIfCancellationRequested();
 
             try
             {
@@ -179,16 +170,6 @@ public sealed class ProcessLauncher : IProcessLauncher
             catch (OperationCanceledException)
             {
                 KillTree();
-                try
-                {
-                    await Task.Delay(5000, CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                }
-                catch (ObjectDisposedException)
-                {
-                }
                 throw;
             }
 
@@ -209,6 +190,31 @@ public sealed class ProcessLauncher : IProcessLauncher
 
         private void KillTree()
         {
+            var childPids = GetChildProcessIds(_process.Id);
+
+            try
+            {
+                foreach (var pid in childPids)
+                {
+                    try
+                    {
+                        Process.GetProcessById(pid).Kill();
+                    }
+                    catch (InvalidOperationException)
+                    {
+                    }
+                    catch (System.ComponentModel.Win32Exception)
+                    {
+                    }
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+
             try
             {
                 _process.Kill();
@@ -219,19 +225,19 @@ public sealed class ProcessLauncher : IProcessLauncher
             catch (System.ComponentModel.Win32Exception)
             {
             }
-
-            KillChildProcesses(_process.Id);
         }
 
-        private static void KillChildProcesses(int parentPid)
+        private static List<int> GetChildProcessIds(int parentPid)
         {
+            var result = new List<int>();
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
-                KillChildProcessesLinux(parentPid);
+                GetChildProcessIdsLinux(parentPid, result);
             }
+            return result;
         }
 
-        private static void KillChildProcessesLinux(int parentPid)
+        private static void GetChildProcessIdsLinux(int parentPid, List<int> result)
         {
             try
             {
@@ -248,17 +254,8 @@ public sealed class ProcessLauncher : IProcessLauncher
                         var parts = stat.Split(' ');
                         if (parts.Length >= 4 && int.TryParse(parts[3], out var ppid) && ppid == parentPid)
                         {
-                            try
-                            {
-                                Process.GetProcessById(pid).Kill();
-                            }
-                            catch (InvalidOperationException)
-                            {
-                            }
-                            catch (System.ComponentModel.Win32Exception)
-                            {
-                            }
-                            KillChildProcessesLinux(pid);
+                            result.Add(pid);
+                            GetChildProcessIdsLinux(pid, result);
                         }
                     }
                     catch (IOException)
