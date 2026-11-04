@@ -1,0 +1,2 @@
+Driver does not support the required nvenc API version. Required: 11.1 Found: 10.1
+The minimum required Nvidia driver for nvenc is 450.80 or newer
