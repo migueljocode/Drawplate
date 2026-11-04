@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test-publish:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: macos-latest
+            rid: osx-arm64
+          - os: windows-latest
+            rid: win-x64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # tag v4.2.1
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d # tag v5.0.0
+        with:
+          global-json-file: global.json
+
+      # dotnet restore --locked-mode is skipped until lock files exist (recorded in PROGRESS.md)
+
+      - name: Build
+        run: dotnet build src/Drawplate.slnx -c Release
+
+      - name: Verify formatting
+        run: dotnet format src/Drawplate.slnx --verify-no-changes
+
+      - name: Install FFmpeg (ubuntu)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -y && sudo apt-get install -y ffmpeg
+
+      - name: Install FFmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+
+      - name: Install FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y
+
+      - name: Test
+        run: dotnet test tests/Drawplate.Tests -c Release
+
+      - name: Publish
+        run: dotnet publish src/Drawplate.Console -c Release -r ${{ matrix.rid }} -o out
+
+      - name: Verify binary version
+        if: runner.os != 'Windows'
+        run: out/drawplate --version
+
+      - name: Verify binary version (Windows)
+        if: runner.os == 'Windows'
+        run: out\drawplate.exe --version
+
+      - name: Record binary size
+        shell: bash
+        run: |
+          if [ -f "out/drawplate" ]; then
+            SIZE=$(stat -c%s out/drawplate)
+          elif [ -f "out/drawplate.exe" ]; then
+            SIZE=$(stat -c%s out/drawplate.exe)
+          else
+            SIZE=0
+          fi
+          echo "## Binary size (${{ matrix.rid }}): $((SIZE / 1024)) KiB" >> $GITHUB_STEP_SUMMARY
