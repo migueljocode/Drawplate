@@ -5,11 +5,11 @@ namespace Drawplate.Tests.Cli;
 
 internal static class CliProcess
 {
-    public static Process Start(string executable, IReadOnlyList<string> arguments)
+    public static global::System.Diagnostics.Process Start(string executable, IReadOnlyList<string> arguments)
     {
         System.ArgumentNullException.ThrowIfNull(arguments);
         System.ArgumentNullException.ThrowIfNull(executable);
-        var psi = new ProcessStartInfo
+        var psi = new global::System.Diagnostics.ProcessStartInfo
         {
             FileName = executable,
             RedirectStandardOutput = true,
@@ -20,6 +20,6 @@ internal static class CliProcess
         {
             psi.ArgumentList.Add(arg);
         }
-        return Process.Start(psi)!;
+        return global::System.Diagnostics.Process.Start(psi)!;
     }
 }

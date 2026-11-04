@@ -13,8 +13,8 @@ Never load the whole file into the agent. For every task load: **section A**, **
 | Phase | State | Owner approval |
 |---|---|---|
 | P0 Baseline and repo | [x] | APPROVED 2026-11-04 |
-| P1 Scaffold and guardrails | [ ] | [ ] |
-| P2 Core domain | [ ] | [ ] |
+| P1 Scaffold and guardrails | [x] | APPROVED 2026-11-04 |
+| P2 Core domain | [x] | APPROVED 2026-11-04 |
 | P3 Process layer, locator, detection | [ ] | [ ] |
 | P4 Conversion pipeline and CLI = milestone M1 | [ ] | [ ] |
 | P5 Terminal UI | [ ] | [ ] |

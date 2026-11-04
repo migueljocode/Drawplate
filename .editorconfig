@@ -38,3 +38,4 @@ dotnet_diagnostic.CA1707.severity = none
 # xUnit requires public test classes (xUnit1000); CA1515 does not apply to test classes.
 [tests/Drawplate.Tests/**/*.cs]
 dotnet_diagnostic.CA1515.severity = none
+dotnet_diagnostic.CA2007.severity = none
