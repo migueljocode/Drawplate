@@ -4,19 +4,19 @@ namespace Drawplate.Models.Cli;
 
 public sealed record RawOptions
 {
-    public string? Encoder { get; init; } = "auto";
-    public string? Quality { get; init; } = "50";
-    public string? MaxSize { get; init; }
-    public string? InputFolder { get; init; } = ".";
-    public ImmutableArray<string> Files { get; init; } = [];
-    public bool NoTimestamps { get; init; }
-    public bool Cpu { get; init; }
-    public bool ListEncoders { get; init; }
-    public bool Interactive { get; init; }
-    public bool InstallDeps { get; init; }
-    public bool NoInstall { get; init; }
-    public bool Help { get; init; }
-    public bool Version { get; init; }
-    public string? FfmpegPath { get; init; }
-    public bool Verbose { get; init; }
+    public string? Encoder { get; set; } = "auto";
+    public string? Quality { get; set; } = "50";
+    public string? MaxSize { get; set; }
+    public string? InputFolder { get; set; } = ".";
+    public ImmutableArray<string> Files { get; set; } = [];
+    public bool NoTimestamps { get; set; }
+    public bool Cpu { get; set; }
+    public bool ListEncoders { get; set; }
+    public bool Interactive { get; set; }
+    public bool InstallDeps { get; set; }
+    public bool NoInstall { get; set; }
+    public bool Help { get; set; }
+    public bool Version { get; set; }
+    public string? FfmpegPath { get; set; }
+    public bool Verbose { get; set; }
 }

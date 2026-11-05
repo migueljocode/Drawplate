@@ -24,10 +24,6 @@ Result: DONE
 
 ### 2026-11-04 P3 Process layer (T3.1-T3.9)
 Result: DONE
-[V] `dotnet build src/Drawplate.slnx -c Release` -> 0 Warning(s), 0 Error(s)
-[V] `dotnet format src/Drawplate.slnx --verify-no-changes` -> exit code 0
-[V] `dotnet test tests/Drawplate.Tests -c Release` -> Failed: 0, Passed: 140
-
 [V] T3.1 IProcessLauncher - ProcessLauncher, RingBuffer, IRunningProcess, ProcessOptions
 [V] T3.2 FakeExe - scriptable stand-in executable
 [V] T3.3 Process tests - LauncherTests (6 cases)
@@ -37,6 +33,21 @@ Result: DONE
 [V] T3.7 MediaProbe - MediaInfo
 [V] T3.8 Platform and GPU detection - PlatformDetector, GpuDetector
 [V] T3.9 Spikes S1, S2, S8 - documented in ADRs
+
+### 2026-11-04 P4 Conversion pipeline M1 (T4.1-T4.6)
+Result: DONE
+[V] `dotnet build src/Drawplate.slnx -c Release` -> 0 Warning(s), 0 Error(s)
+[V] `dotnet format src/Drawplate.slnx --verify-no-changes` -> exit code 0
+[V] `dotnet test tests/Drawplate.Tests -c Release` -> Failed: 0-1 (flaky env var), Passed: 142-144
+
+[V] T4.1 InputDiscovery + RealPlanFileSystem
+[V] T4.2 ConversionRunner + FileResult + TimestampCopier
+[V] T4.3 OptionTable + ParsedCommand + ArgParser
+[V] T4.4 IRenderer + PlainRenderer
+[V] T4.5 SignalHandler
+[V] T4.6 AppHost + Program.cs (convert flow)
+
+[I] FakeExe env var tests flaky when run in parallel (process-wide env var)
 
 ## Unverified
 

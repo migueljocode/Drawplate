@@ -4,16 +4,9 @@ using System.IO;
 using System.Runtime.InteropServices;
 
 using Drawplate.Models.Encoding;
+using Drawplate.Models.Setup;
 
 namespace Drawplate.Services.Platform;
-
-public sealed record PlatformInfo(
-    OperatingSystemKind Os,
-    string Architecture,
-    ImmutableHashSet<string> Tools,
-    string? LinuxId,
-    string? LinuxIdLike,
-    int? FedoraRelease);
 
 public sealed class PlatformDetector
 {

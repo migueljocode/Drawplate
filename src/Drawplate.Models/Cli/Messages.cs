@@ -3,6 +3,8 @@ using System.Linq;
 
 namespace Drawplate.Models.Cli;
 
+using Drawplate.Models.Planning;
+
 public static class Messages
 {
     public static Message E_USAGE_01_Long(string arg) =>
@@ -32,7 +34,7 @@ public static class Messages
     public static Message E_USAGE_08(string path) =>
         new("E-USAGE-08", $"Output path is a file, not a folder: {path}", null, 2);
 
-    public static Message E_USAGE_09(ImmutableArray<(string OutputName, ImmutableArray<string> Sources)> groups)
+    public static Message E_USAGE_09(ImmutableArray<NameCollision> groups)
     {
         var lines = string.Join("\n", groups.Select(g => $"  {g.OutputName}: {string.Join(", ", g.Sources)}"));
         return new("E-USAGE-09",
@@ -68,4 +70,13 @@ public static class Messages
         new("N-INT", "Interrupted.", null, 130);
 
     public static string N_VERSION(string version) => $"drawplate {version}";
+
+    public static Message E_TEMP_01() =>
+        new("E-TEMP-01", "This option is not available yet.", null, 2);
+
+    public static Message E_FF_02(string path, string reason) =>
+        new("E-FF-02", $"FFmpeg at {path} could not be run ({reason}).", "Reinstall it, or choose another with --ffmpeg-path.", 3);
+
+    public static Message E_FF_03() =>
+        new("E-FF-03", "This FFmpeg build has no libx264 encoder and no working hardware encoder, so nothing can encode.", "Install the full build.", 3);
 }
