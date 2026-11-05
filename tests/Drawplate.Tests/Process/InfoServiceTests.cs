@@ -12,6 +12,7 @@ using Xunit;
 
 namespace Drawplate.Tests.Process;
 
+[Collection("FakeExe")]
 public class InfoServiceTests
 {
     private static readonly string FakeExeDll = FakeExeHarness.FakeExePath;

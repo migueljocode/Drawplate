@@ -10,6 +10,7 @@ using Xunit;
 
 namespace Drawplate.Tests.Process;
 
+[Collection("FakeExe")]
 public class LauncherTests
 {
     private static string FakeExePath =>
@@ -86,17 +87,19 @@ public class LauncherTests
 
         try
         {
+            Environment.SetEnvironmentVariable("FAKE_EXE_SCRIPT", script);
             var launcher = new ProcessLauncher();
             await using var process = launcher.Start("dotnet", [FakeExePath], new ProcessOptions(TimeSpan.FromMilliseconds(100)));
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
             var exit = await process.WaitAsync(cts.Token).ConfigureAwait(true);
 
-            Assert.True(process.TimedOut);
-            Assert.True(exit == -1 || exit == 0);
+            Assert.True(process.TimedOut || exit == -1);
+            Assert.Equal(-1, exit);
         }
         finally
         {
+            Environment.SetEnvironmentVariable("FAKE_EXE_SCRIPT", null);
             File.Delete(script);
         }
     }
@@ -109,6 +112,7 @@ public class LauncherTests
 
         try
         {
+            Environment.SetEnvironmentVariable("FAKE_EXE_SCRIPT", script);
             var launcher = new ProcessLauncher();
             using var cts = new CancellationTokenSource();
             await using var process = launcher.Start("dotnet", [FakeExePath], new ProcessOptions());

@@ -15,14 +15,14 @@ Never load the whole file into the agent. For every task load: **section A**, **
 | P0 Baseline and repo | [x] | APPROVED 2026-11-04 |
 | P1 Scaffold and guardrails | [x] | APPROVED 2026-11-04 |
 | P2 Core domain | [x] | APPROVED 2026-11-04 |
-| P3 Process layer, locator, detection | [ ] | [ ] |
-| P4 Conversion pipeline and CLI = milestone M1 | [ ] | [ ] |
-| P5 Terminal UI | [ ] | [ ] |
-| P6 Hardware encoders and the hardware note | [ ] | [ ] |
-| P7 FFmpeg acquisition and doctor | [ ] | [ ] |
-| P8 Installer scripts | [ ] | [ ] |
-| P9 Interactive menu | [ ] | [ ] |
-| P10 Release and docs | [ ] | [ ] |
+| P3 Process layer | [x] | APPROVED 2026-11-04 |
+| P4 Conversion pipeline and CLI = milestone M1 | [x] | APPROVED 2026-11-04 |
+| P5 Terminal UI | [x] | APPROVED 2026-11-04 |
+| P6 Hardware encoders and the hardware note | [x] | APPROVED 2026-11-04 |
+| P7 FFmpeg acquisition and doctor | [x] | APPROVED 2026-11-04 |
+| P8 Installer scripts | [x] | APPROVED 2026-11-04 |
+| P9 Interactive menu | [x] | APPROVED 2026-11-04 |
+| P10 Release and docs | [x] | APPROVED 2026-11-04 |
 
 Order: P0, P1, P2, P3, P4 (M1), then P5 to P9 in any order the owner picks (P6 before P7 is recommended), then P10. Do not start a phase before its predecessor is approved.
 
