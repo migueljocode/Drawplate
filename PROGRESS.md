@@ -94,3 +94,16 @@ Result: DONE. CI run 42487838738 (5994c40): ubuntu and macos green; windows only
 [V] dotnet build and dotnet format (Models, Services, Console) -> 0 errors, 0 warnings, exit 0
 [V] Test files compile against the xunit stub (EncoderTests, GoldenArgvTests)
 [I] Services still calls FfmpegArgv.Probe(kind) without a VaapiTarget. On Linux, Vaapi now throws ArgumentNullException (was NotSupportedException): same failure, different message. R09 wires the device through
+
+### R06 Process launcher hardening
+Result: BLOCKED on windows-latest. Ubuntu and macOS green; Windows fails for the new test Cancel_WhileDrainingStdout_KillsWithinThreeSeconds and the known Cancel_KillsProcessTree_Within3Seconds (PR #5, run 42489621210)
+[V] `grep -rn GetChildProcessIds src` -> no matches (the /proc walker is deleted)
+[V] Services build Release 0 warnings/0 errors; dotnet format exit 0
+[V] Five launcher scenarios run against FakeExe with a runner: timeout 1044 ms with TimedOut=true and exit -1; cancel while draining throws TaskCanceledException, process killed (137), stdout drained; 2000 stderr lines x 20 rounds: tail contains the last line 20/20; missing exe and non-executable file both throw ProcessStartFailedException
+[V] LauncherTests (5 new tests) compile against the xunit stub
+[I] Known Windows failure LauncherTests.Cancel_KillsProcessTree_Within3Seconds is still expected to fail until CI shows the Windows result; this stage does not change that test
+[I] Process.Kill(entireProcessTree: true) replaces the hand-written walker; .NET walks the tree itself
+[V] Windows CI, 5 runs (42488283202, 42488602287, 42488927354 build error, 42489257082, 42489621210): ExitCode stays -1 after cancel in both cancel tests
+[V] Attempts that did not fix Windows: parent-kill fallback when Kill(entireProcessTree: true) throws; bounded async wait for exit after kill; treating InvalidOperationException as parent-kill too
+[I] Linux behaviour is correct in all runs (runner check: cancel exit 137, stdout drained)
+[U] Needs a Windows reproduction (or CI diagnostics for Process state after kill) before R06 can pass. Owner decision needed: fix in a Windows session, or add the new test to the known list (requires owner approval)
