@@ -74,3 +74,14 @@ Result: DONE. CI run 42468607517 (6588bd9): ubuntu and macos green; windows only
 [I] Deviation: ArgParser.cs carries `[assembly: InternalsVisibleTo("Drawplate.Tests")]` (Console had none); needed for ArgParserTests
 [U] `-e` value placeholder is `n` (R04 help block shows `<n>`); owner may prefer `name`
 [V] CI run 42468607517: 4 ArgParserTests failed first (ImmutableArray reference equality in Assert.Equal); fixed by comparing arrays
+
+### R04 Help, version and the entry point
+Result: DONE. CI run 42469028423 (5f5a48f): ubuntu and macos green; windows only the 11 known tests (PR #3)
+[V] Binary with `PATH=` empty, `DRAWPLATE_FFMPEG=/nonexistent`, empty folder: `-h`, `--help` exit 0, 27 stdout lines, stderr empty; `-V`, `--version` exit 0 with one line
+[V] `drawplate --bogus` -> exit 2, stdout 0 bytes, E-USAGE-01 on stderr
+[V] `drawplate --help` stdout equals tests/Drawplate.Tests/Golden/help.txt byte for byte
+[V] dotnet build and dotnet format (Models, Services, Console) -> 0 errors, 0 warnings, exit 0
+[V] New tests compile against the xunit stub: HelpTextTests, CliStartupTests, ArgParserTests
+[I] Golden help.txt aligns the `-e, --encoder <n>` line to the 24-column rule. The plan's block had 6 spaces there, which breaks the rule, so the plan's text was corrected
+[I] Version prints 1.0.0 in dev builds: the SDK embeds the default Version when no Version property is set. The 0.0.0 fallback applies only when no informational version exists. CI sets a version at publish (R17)
+[I] Deviation: ExitCode became public (Models) so Console can use it; CA1031 is satisfied by an exception filter (`when ex is not OperationCanceledException`), not a suppression

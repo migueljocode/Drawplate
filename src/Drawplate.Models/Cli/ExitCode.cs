@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 
 namespace Drawplate.Models.Cli;
 
-internal enum ExitCode
+public enum ExitCode
 {
     Ok = 0,
     Failure = 1,

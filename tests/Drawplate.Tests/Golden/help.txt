@@ -1,0 +1,27 @@
+drawplate - convert videos to H.264/AAC MP4 with FFmpeg
+
+Usage:
+  drawplate [options] [file ...]     convert the given files
+  drawplate [options] -i <folder>    convert every video in a folder (not recursive)
+  drawplate                          convert the current folder
+  drawplate setup [-y] [-n]          show how to get FFmpeg; with consent, run the install command
+  drawplate doctor                   read-only check of FFmpeg, encoders and hardware
+
+Options:
+  -i, --input <folder>      Folder that contains the videos (default: current folder)
+  -o, --output <folder>     Output folder (default: <input>/compressed, or ./compressed for files)
+  -t, --no-timestamps       Do not copy the original file dates
+  -q, --quality <1-100>     Quality, higher is better (default: 50)
+  -s, --max-size <size>     Largest output size: sd, hd, fullhd or 4k (default: none)
+  -e, --encoder <n>         Encoder name or auto (default: auto); -l shows what works here
+  -c, --cpu                 Use the CPU (libx264) only; same as -e cpu
+  -l, --list-encoders       Print the encoders that work on this machine, then exit
+  -m, --interactive         Interactive menu (needs a terminal)
+  -y, --install-deps        Run the FFmpeg install command without asking, then exit
+  -n, --no-install          Never offer or run an install (wins over -y)
+  -h, --help                Show this help
+  -V, --version             Print the version
+      --ffmpeg-path <file>  Use this FFmpeg executable
+      --verbose             Print ffmpeg arguments and stderr tails to stderr
+
+Exit codes: 0 ok, 1 failure, 2 usage error, 3 FFmpeg unavailable, 130 interrupted.

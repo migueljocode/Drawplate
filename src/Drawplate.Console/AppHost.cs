@@ -19,53 +19,70 @@ using Drawplate.Services.Processes;
 
 namespace Drawplate.Console;
 
-internal static class Program
+internal static class AppHost
 {
-    public static int Main(string[] args)
+    /// <summary>The only place that turns exceptions into exit codes (C.4).</summary>
+    internal static int RunGuarded(Func<int> body)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        try
+        {
+            return body();
+        }
+        catch (OperationCanceledException)
+        {
+            global::System.Console.Error.WriteLine(Messages.N_INT().Text);
+            return (int)ExitCode.Interrupted;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            global::System.Console.Error.WriteLine($"Unexpected error: {ex.Message}");
+            return (int)ExitCode.Failure;
+        }
+    }
+
+    internal static int Run(string[] args, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(args);
-
-        using var signalHandler = new SignalHandler();
-
-        if (args.Length == 1 && (args[0] == "--version" || args[0] == "-V"))
-        {
-            global::System.Console.WriteLine("drawplate 0.0.0");
-            return 0;
-        }
-
         var parsed = ArgParser.Parse(args);
-        if (parsed.Error is { } err)
+
+        if (Dispatch(parsed) is { } early)
         {
-            global::System.Console.Error.WriteLine(err.Text);
-            if (err.Hint is { } h) global::System.Console.Error.WriteLine($"  {h}");
-            return err.ExitCode;
+            return early;
         }
 
-        if (parsed.Kind == CommandKind.Version)
-        {
-            global::System.Console.WriteLine("drawplate 0.0.0");
-            return 0;
-        }
+        return RunConvert(parsed.Options!, ct);
+    }
 
-        if (parsed.Kind == CommandKind.Help)
-        {
-            global::System.Console.WriteLine("Usage: drawplate [options] [file ...]");
-            return 0;
-        }
+    private static int? Dispatch(ParsedCommand parsed) => parsed.Kind switch
+    {
+        CommandKind.Help => Print(HelpText.Render()),
+        CommandKind.Version => Print(Messages.N_VERSION(VersionInfo.Current) + "\n"),
+        CommandKind.Error => Fail(parsed.Error!),
+        CommandKind.Setup or CommandKind.Doctor => Fail(Messages.E_TEMP_01()),
+        _ when parsed.Options is { } o && (o.InstallDeps || o.Interactive || o.NoInstall) => Fail(Messages.E_TEMP_01()),
+        _ => null,
+    };
 
-        if (parsed.Kind is CommandKind.Setup or CommandKind.Doctor)
-        {
-            global::System.Console.Error.WriteLine(Messages.E_TEMP_01().Text);
-            return 2;
-        }
+    private static int Print(string text)
+    {
+        global::System.Console.Out.Write(text);
+        return (int)ExitCode.Ok;
+    }
 
-        if (parsed.Options is { } o && (o.InstallDeps || o.Interactive || o.NoInstall))
+    private static int Fail(Message message)
+    {
+        global::System.Console.Error.WriteLine(message.Text);
+        if (message.Hint is { } hint)
         {
-            global::System.Console.Error.WriteLine(Messages.E_TEMP_01().Text);
-            return 2;
+            global::System.Console.Error.WriteLine($"  {hint}");
         }
+        return message.ExitCode;
+    }
 
-        var options = parsed.Options!;
+    private static int RunConvert(RawOptions options, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
 
         var validation = OptionValidator.Validate(options, OperatingSystemKind.Linux);
         if (validation.Error is { } verr)
