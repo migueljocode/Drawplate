@@ -55,15 +55,18 @@ jobs:
         if: failure()
         shell: pwsh
         run: |
+          $failed = @()
           Get-ChildItem -Recurse -Filter *.trx -Path TestResults | ForEach-Object {
             [xml]$report = Get-Content -LiteralPath $_.FullName -Raw
             foreach ($result in $report.TestRun.Results.UnitTestResult) {
               if ($result.outcome -eq 'Failed') {
-                $message = [string]$result.Output.ErrorInfo.Message -replace "\r?\n", ' '
-                Write-Output "::error title=$($result.testName)::$message"
+                $message = ([string]$result.Output.ErrorInfo.Message -replace "\r?\n", ' ')
+                if ($message.Length -gt 120) { $message = $message.Substring(0, 120) }
+                $failed += "$($result.testName) :: $message"
               }
             }
           }
+          Write-Output "::error title=Failing tests ($($failed.Count))::$($failed -join ' ;; ')"
 
       - name: Publish
         run: dotnet publish src/Drawplate.Console -c Release -r ${{ matrix.rid }} -o out

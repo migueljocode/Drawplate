@@ -44,7 +44,7 @@ Result: DONE (baseline recorded; plan diagnosis confirmed)
 [U] STD-TEST locally: test project needs NuGet (api.nuget.org not reachable from the sandbox); tests run in CI only
 
 ### R02 CI and test-harness hygiene
-Result: BLOCKED. Ubuntu and macOS green; Windows Test step red (run 42467293199, PR #1)
+Result: DONE under owner decision 2026-11-08 (option 2). Ubuntu and macOS green; Windows fails only for the 11 known tests assigned to R06 (1), R07 (6), R10 (2) (plan.md)
 [V] `.gitattributes` `* text=auto eol=lf`; `git add --renormalize .` changed no content on Linux
 [V] `dotnet format <project> --verify-no-changes` (Models, Services, Console) -> exit 0
 [V] `dotnet build <project> -c Release` (Models, Services, Console) -> 0 Warning(s), 0 Error(s)
@@ -59,3 +59,6 @@ Result: BLOCKED. Ubuntu and macOS green; Windows Test step red (run 42467293199,
 [I] These failures were hidden: `main` CI never reached the Test step on Windows (format step failed first)
 [I] Their causes are not in R02's file list (product path handling is R06, R07, R10); R02 cannot reach green without them
 [U] Owner decision needed: allow test-only fixes in R02, or move Windows-only test fixes into R06/R07/R10 and relax R02 acceptance
+[V] Owner chose option 2 (2026-11-08): Windows known failures moved to R06 (1), R07 (5), R10 (2); plan.md amended (R02 acceptance, rule for known failures)
+[V] Full Windows failure list (aggregated annotation, run 42467945460): 11 tests = the 10 above + Cli.VersionTests.UnknownOption_ExitsTwo (assigned to R07)
+[I] The earlier list of 10 was truncated by GitHub, which shows at most 10 error annotations per step

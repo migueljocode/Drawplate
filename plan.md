@@ -29,6 +29,8 @@ Never load the whole file. For a stage load: this header, **Stage rules** (Part 
 
 **Approved stages (only the owner edits this line):** none yet.
 
+**Owner decision 2026-11-08 (option 2):** Windows is not a gate until R10. The Windows Test job may fail only for the known failures listed in the stage sections below (R06, R07, R10). Each such test must stay as written (no skip, no weakening). Any other Windows failure blocks the stage. Ubuntu and macOS must be green on every stage. From R10 on, Windows must be green.
+
 # Part 1. Audit findings
 
 Severity: **C** blocks start or conversion · **H** wrong behavior or missing required feature · **M** quality or process · **L** minor. Paths are repo-relative; `Bash/vneat` means the WorkWithIO script.
@@ -139,7 +141,7 @@ Observed: `./drawplate --help` and `./drawplate` die with `Unhandled exception. 
   1. Add `.gitattributes` with `* text=auto eol=lf`, then `git add --renormalize .` (expect no content change on Linux).
   2. `.github/workflows/ci.yml`: in "Record binary size" replace `stat -c%s <file>` with `wc -c < <file>` (works on Linux, macOS, Windows Git Bash).
   3. `tests/Drawplate.Tests/Process/FakeExeHarness.cs`: `FakeExePath` returns `FakeExe.dll` from `bin/Release/net10.0` if it exists, otherwise `bin/Debug/net10.0`; when neither exists throw `InvalidOperationException("Build tests/FakeExe first")`.
-- **Acceptance:** `dotnet test tests/Drawplate.Tests -c Debug` and `-c Release` both end `Failed: 0` with the same total as R01; the CI run for the branch is green on ubuntu, macos and windows (`gh run list --branch <branch>`).
+- **Acceptance (amended 2026-11-08):** `dotnet test tests/Drawplate.Tests -c Debug` and `-c Release` both end `Failed: 0` on Linux with the same total as R01; the CI run for the branch is green on ubuntu and macos; the windows job fails only for the known failures listed under R06, R07 and R10 (full set of 11 in run 42467945460, listed under R06, R07, R10).
 - **Tests:** existing suite. **Depends:** R01.
 
 ### R03 Argument parser and option table
@@ -245,6 +247,8 @@ Observed: `./drawplate --help` and `./drawplate` die with `Unhandled exception. 
   4. `Start`: wrap `Process.Start` and catch `Win32Exception`, `InvalidOperationException`, `IOException`; throw `ProcessStartFailedException(executable, message)` (public sealed, in Services).
   5. `KillTree()`: `try { _process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { } catch (Win32Exception) { }` with a comment why (already exited). Delete `GetChildProcessIds*` (the `/proc` walker).
 - **Acceptance:** build 0 warnings; `grep -rn GetChildProcessIds src` empty; the tests below pass on Linux (and in CI on macOS and Windows).
+- **Known Windows failures (owner decision 2026-11-08):** `Process.LauncherTests.Cancel_KillsProcessTree_Within3Seconds` (exit code -1 on Windows); must pass on windows-latest after this stage.
+
 - **Tests (T1, FakeExe):** `Timeout_WhileStdoutOpen_KillsAndReportsTimedOut` (script `{"hang":true}`, 1 s timeout, whole call under 5 s), `Cancel_WhileDrainingStdout_KillsWithinThreeSeconds`, `Wait_AfterManyStderrLines_TailHasLastLine` (script prints 2000 stderr lines; run in a loop of 20), `Start_MissingExecutable_ThrowsProcessStartFailed`, `Start_NotExecutable_ThrowsProcessStartFailed` (Unix only, text file without exec bit). **Depends:** R02 (does not need R05; order kept for review simplicity).
 
 ### R07 Locator, FFmpeg info result, platform detection
@@ -259,6 +263,8 @@ Observed: `./drawplate --help` and `./drawplate` die with `Unhandled exception. 
   5. `PlatformDetector`: add `DetectOs()` (pure, no tool scan). `Detect(pathFolders, fileExists)` finds package managers by looking for the executable in PATH folders (`.exe`, `.cmd`, `.bat` also tried on Windows) and **starts no process**; keep `Detect()` as a wrapper using the real environment. Delete `Process.Start`. Detection runs only where needed (missing FFmpeg, `setup`, `doctor`), never for help, version or a normal conversion.
   6. `ArchitectureTests` add `Only_ProcessLauncher_StartsProcesses`: scan `src/**/*.cs` for `Process.Start(` and `new ProcessStartInfo` outside `Processes/ProcessLauncher.cs`; any hit fails (named by old task T7.6).
 - **Acceptance:** tests pass; `drawplate --ffmpeg-path /nope -l` prints E-FF-02 `(file not found)` exit 3 (after R11) — until then verify with `InfoServiceTests`.
+- **Known Windows failures (owner decision 2026-11-08):** `Cli.VersionTests.Version_Flag_PrintsVersionAndExitsZero` (`-V`, `--version`) and `Cli.VersionTests.UnknownOption_ExitsTwo` (binary path lacks `.exe` on Windows), `Process.LocatorTests.Path_Found` (null on Windows), `Process.InfoServiceTests.Version_6_1_1_Ok`, `Version_5_1_TooOld`, `NotRunnable_ExitCode127`, `Encoders_ContainLibx264` (script file started as executable on Windows).
+
 - **Tests:** `Locator_ArgumentMissing_ReturnsCandidate`, `Locator_EmptyPathEntry_NotResolvedAgainstCwd`, `Locator_RelativePathEntry_Ignored`, `KnownFolders_Linux_Order`, `KnownFolders_Windows_UsesLocalAppData`, `InfoService_MissingFile_ReportsFileNotFound`, `InfoService_StartFails_ReportsCannotBeStarted`, `InfoService_Version5_ReportsTooOld`, `InfoService_MasterBuild_NotTooOld`, `Platform_Detect_StartsNoProcess`, `Platform_ToolOnPath_WindowsExtensionsTried`, `Only_ProcessLauncher_StartsProcesses`. **Depends:** R06.
 
 ### R08 Encoder probing
@@ -298,6 +304,8 @@ Observed: `./drawplate --help` and `./drawplate` die with `Unhandled exception. 
   3. `AppHost` convert flow, in the order of old T4.6 with these rules: validate with `PlatformDetector.DetectOs()`; use only `ConvertOptions` afterwards (never `int.Parse(raw)`); sources = explicit files, else `InputDiscovery.FromFolder(inputFolder ?? ".")` (E-USAGE-07 when missing); output = `-o`, else `<input>/compressed` (folder mode) or `./compressed` (files mode); an existing file at the output path is E-USAGE-08 (exit 2); build the plan with `ConversionPlanner.Build`; print W-01 and W-02 (stderr) and N-01 (stdout, skip glyph) for the matching statuses (`Missing`, `NotAFile`, `SkipUnsupported`); name collisions → E-USAGE-09, exit 2, no process started; **E-RUN-01 (exit 1) when no file has status `Convert`, `SkipExists` or `SkipInsideOutput`** (so output-equals-input is exit 0, unsupported-only is exit 1: regressions R-T6, R-T7).
   4. Delete the unused `comparison` local in `FindCollisions` (B29); collision matching stays `OrdinalIgnoreCase` (C.7).
 - **Acceptance:** a folder with 3 `.mp4`, 1 `.MOV`, 1 `notes.txt`, 1 subfolder named `x.mp4`, 1 hidden `.a.mp4` plans exactly the 4 videos, sorted, as full paths.
+- **Known Windows failures (owner decision 2026-11-08):** `Unit.PlannerTests.InsideOutput_Skipped` and `ExistingTarget_Skipped` (return `Convert` on Windows; expected `SkipInsideOutput` / `SkipExists`). After R10 the windows job must pass in full.
+
 - **Tests:** `Discovery_Folder_FullPathsSortedFilesOnly`, `Discovery_Folder_MissingFolder_E_USAGE_07`, `Discovery_Hidden_Skipped`, `Discovery_UppercaseExtension_Matched`, `Flow_OutputFlag_Honored`, `Flow_OutputIsFile_E_USAGE_08`, `Flow_Collision_E_USAGE_09_NoProcess`, `Flow_UnsupportedOnly_E_RUN_01_Exit1`, `Flow_OutputEqualsInput_AllSkipped_Exit0`. (Flow tests drive `AppHost.Run` in-process with FakeExe as ffmpeg and injected console writers; add `TextWriter stdout, TextWriter stderr` parameters to `AppHost.Run` in this stage.) **Depends:** R04, R07, R09.
 
 ### R11 Encoder selection, `-l`, hardware note, plan card
