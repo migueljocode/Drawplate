@@ -1,30 +1,442 @@
 # Drawplate: agent execution plan
 
-**Status:** DRAFT until the owner writes `APPROVED <date>` in the status table (section S). This file is the single source of truth for scope, behavior and tasks. The research report explains why; this file says what to do.
-**Product:** Drawplate, a cross-platform command-line tool (Native-AOT .NET) that converts batches of videos to H.264/AAC MP4 with FFmpeg. It replaces the `vneat` scripts (`Bash/vneat`, `Zsh/vneat.zsh`, `PowerShell/vneat.ps1`) in `migueljocode/WorkWithIO`.
-**Reference repos (read-only):** `migueljocode/AriaSharp` (conventions, CI, release), `migueljocode/WorkWithIO` (the scripts being replaced).
+**Status:** REPAIR PLAN v2, written 2026-11-07 after an independent audit of `main` @ `b015f38`. The 2026-11-05 claim "all phases P0-P10 complete" is **false**: the app crashes at startup and, once started, cannot convert a single file. Stages **R01 to R20** (Part 4) are the work to do, in order. Part 7 is the previous plan.md, kept verbatim: its sections **D, E, G, H, I remain binding** for behavior, messages, installers, docs and fixtures; its task list **F is historical** (cited by R-stages, never executed directly).
+**Product:** Drawplate, a cross-platform command-line tool (Native-AOT .NET) that converts batches of videos to H.264/AAC MP4 with FFmpeg. It replaces the `vneat` scripts (`Bash/vneat`, `Zsh/vneat.zsh`, `PowerShell/vneat.ps1`) in `migueljocode/WorkWithIO` (reference commit `93f61bb`).
+**Labels:** [V] verified (read in source, run, or read from a CI log) · [I] inferred · [U] unknown. The audit sandbox had no .NET SDK (installs blocked), so no `dotnet` command was run by the auditor: every .NET finding is from reading source and from the CI logs of run 42006901420. FFmpeg 6.1.1 was available and was run (R08 fixtures).
+**Companion:** the research report (Project doc "Drawplate Research Report & Roadmap") holds the evidence summary; this file says what to do.
 
 ## How to read this file (context budget)
 
-Never load the whole file into the agent. For every task load: **section A**, **section C**, the **task** itself, and only the sections the task cites (D, E, G, H, I). Index: A agent prompt, B facts and scope, C conventions, D behavior specification, E message catalog, F tasks P0 to P10, G installer specification, H README specification, I appendices, S status.
+Never load the whole file. For a stage load: this header, **Stage rules** (Part 4), the stage itself, the bug rows it cites (Part 1, `B..`), and only the sections of Part 7 it cites (A, C, D, E, G, H, I). Find things with `grep -n "^### R07" plan.md`.
 
-## S. Status
+## S. Status (replaces the old table; only the owner writes APPROVED)
 
-| Phase | State | Owner approval |
+| Phase (old id) | Claimed 2026-11-05 | Audit 2026-11-07 | Repair stages |
+|---|---|---|---|
+| P0 Baseline | done | docs exist; `VNEAT-BASELINE.md` is a 19-line stub; ADR 0002 to 0004 missing | R19 |
+| P1 Scaffold | done | builds; Windows format check and macOS size step red; `PublishAot` never set; no-elevation and single-launcher tests missing | R02, R07, R14, R17 |
+| P2 Core domain | done | CPU, NVENC, QSV, VideoToolbox vectors match plan I.1; VAAPI and AMF throw (B01) | R05 |
+| P3 Process layer | done | launcher, locator, platform, probe, media probe all defective (B09 to B21) | R06 to R09 |
+| P4 Pipeline and CLI (M1) | done | **not met**: crash, dead parser, no folder mode, no conversion (B02 to B13) | R03, R04, R10 to R13, R16 |
+| P5 Terminal UI | done | only `Theme.cs`, unused; no live progress, no ADR 0003 | R15, R17 |
+| P6 Hardware encoders | done | `EncoderChain`, `HardwareNote` exist, unwired; no VAAPI/AMF; no hardware results | R05, R08, R11, R20 |
+| P7 Acquisition and doctor | done | services exist, unwired, buggy (B17, B18) | R14 |
+| P8 Installers | done | scripts exist, generator mismatched, no dist, no tests, no CI | R18 |
+| P9 Interactive menu | done | `MenuService` unwired | R14 |
+| P10 Release and docs | done | no release workflow, README lacks troubleshooting, HARDWARE.md empty | R19 |
+
+**Approval history [V]:** P0 approval is commit `4d7f2da`. The P1 and P2 "APPROVED 2026-11-04" lines were added inside the implementing commit `212c59b`; P3 to P10 inside `b015f38`, dated a day before the work landed. All commits carry one author identity, so who typed them is [I]. **Treat P1 to P10 as unapproved** until the owner re-approves each stage below.
+
+**Approved stages (only the owner edits this line):** none yet.
+
+# Part 1. Audit findings
+
+Severity: **C** blocks start or conversion · **H** wrong behavior or missing required feature · **M** quality or process · **L** minor. Paths are repo-relative; `Bash/vneat` means the WorkWithIO script.
+
+| ID | Sev | Finding | Evidence | Stage |
+|---|---|---|---|---|
+| B01 | C | `EncoderProfiles.Args` throws `NotSupportedException("capture the golden vector first (T6.7)")` for Vaapi and Amf [V]. Present since the file's first commit `bce3c9d`, never changed | `src/Drawplate.Models/Encoding/EncoderProfiles.cs:11`; reached through `EncoderSets.cs:25-26` (Linux set contains Vaapi, Windows set Amf), `EncoderProbe.cs:35-39`, `FfmpegArgv.cs:22` | R05 |
+| B02 | C | The parser never returns Help or Version; `--help` only sets `RawOptions.Help`, which nothing reads, and `AppHost` tests `parsed.Kind == Help`, which never happens [V]. Only a lone `--version`/`-V` works | `ArgParser.cs:58`, `AppHost.cs:30,44,50`, `OptionTable.cs:31` | R03, R04 |
+| B03 | C | Every short option is rejected: the table stores `"-h"`, the parser compares with `"h"` [V]. `drawplate -h` prints `Unknown option -h.` and exits 2; so do `-i -o -q -s -e -c -t -l -m -y -n` | `OptionTable.cs:20-32` vs `ArgParser.cs:100` | R03 |
+| B04 | H | Subcommands `setup` and `doctor` are never recognised; `ParsedCommand.Setup/Doctor/Help/Version` are never constructed [V] | grep: 0 uses | R03 |
+| B05 | C | No top-level exception boundary: any exception prints a .NET stack trace; `Process.Start` failure (missing or non-executable file) is also unhandled [V] | `AppHost.cs:24-188` (no try/catch), `ProcessLauncher.cs:45` | R04, R06 |
+| B06 | H | Startup is not phased. `Main` parses, validates with a hard-coded Linux, detects the platform (starts up to 8 `<tool> --version` processes), locates FFmpeg, runs `-version`, `-encoders` and one probe per encoder, and only then branches [V] | `AppHost.cs:64,72-99`, `PlatformDetector.cs:31-60` | R04, R07 |
+| B07 | L | Version is the literal `0.0.0`, in two places [V] | `AppHost.cs:32,46` | R04 |
+| B08 | C | Folder mode does nothing: the folder path is passed to the planner as if it were a file, becomes `NotAFile`, zero conversions, exit 0. `InputDiscovery.FromFolder` is never called [V] | `AppHost.cs:129`, `ConversionPlanner.cs:63` | R10 |
+| B09 | H | `InputDiscovery.FromFolder` returns bare names instead of paths and throws its sort away (`Array.Sort(files.ToArray(), …)` sorts a copy) [V] | `InputDiscovery.cs:36,39` | R10 |
+| B10 | C | No file can convert: `MediaProbe` is built without an ffprobe path and has no banner fallback, so it returns `MediaInfo(null, false)` and the runner fails every file with "no video stream". `FfmpegBannerParser.ParseDuration/HasVideoStream` are unused [V] | `AppHost.cs:168`, `MediaProbe.cs:26-35`, `ConversionRunner.cs:60-63` | R09 |
+| B11 | H | `-o -e -c -s` are parsed and ignored: `-o` setter is empty and `RawOptions` has no output field; size cap is always `SizeCap.None`; chain is the raw probe result; `EncoderChain.Build` and `ConvertOptions` are unused [V] | `OptionTable.cs:21`, `AppHost.cs:110,176` | R03, R10, R11 |
+| B12 | H | Written but never called by the app: `HardwareNote`, `GpuDetector`, `EncoderChain`, `Theme`, `AcquisitionFlow`, `DoctorService`, `MenuService` [V]. `-m -y -n` print E-TEMP-01 (allowed for M1 only) | `AppHost.cs:56-60` | R11, R14, R15 |
+| B13 | H | Ctrl-C is swallowed and nothing is cancelled: the handler only sets `e.Cancel = true`; the CTS is never cancelled; no SIGTERM/SIGHUP/SIGQUIT; every call uses `CancellationToken.None` [V] | `SignalHandler.cs:23-26`, `AppHost.cs:91,99,176` | R13 |
+| B14 | H | Launcher timeout and cancellation work only inside `WaitAsync`, which every caller invokes after draining stdout, so a hung process blocks forever; the stderr reader is never awaited, so `StderrTail` can be incomplete; the tree kill walks `/proc` (Linux only) [V] | `EncoderProbe.cs:59-64`, `FfmpegInfoService.cs:43-48`, `ConversionRunner.cs:82-92`, `ProcessLauncher.cs:56,68,149-175,191-262` | R06 |
+| B15 | H | Locator: an unusable `--ffmpeg-path`/`DRAWPLATE_FFMPEG` returns null and is reported as "not found" instead of E-FF-02; empty PATH entries resolve against the current directory; known folders are passed only on Linux and Linux paths are copied into two services; a too-old or unrunnable FFmpeg is always E-FF-02 "unknown", E-FF-07 is never printed [V] | `FfmpegLocator.cs:26-40,46`, `AppHost.cs:76-94`, `DoctorService.cs:33`, `AcquisitionFlow.cs:63` | R07 |
+| B16 | M | `PlatformDetector` starts processes with `Process.Start` and one `Arguments` string, breaking AGENTS rules 7 and C.6; nothing scans for it [V] | `PlatformDetector.cs:46-53` | R07 |
+| B17 | H | `AcquisitionFlow` throws `ArgumentNullException` whenever `--ffmpeg-path` is absent; after an install it re-checks the old path instead of locating again; prints a simplified text, not E-FF-01 [V] | `AcquisitionFlow.cs:59,125,155,178-190` | R14 |
+| B18 | M | `DoctorService` hard-codes "ffprobe not found" and "found on PATH", runs no encoder probe, prints no hardware note [V] | `DoctorService.cs:58-63` | R14 |
+| B19 | H | Output bypasses the renderer: fixed Unicode glyphs, `null` CRF and fixed `[CPU]` in the plan card, summary with output size 0, time 0 and `[CPU] x1`; skip, W-01, W-02, N-01 and N-INT lines never printed; `PlainRenderer` writes to `Console` (untestable) [V] | `AppHost.cs:157-185`, `PlainRenderer.cs` | R12 |
+| B20 | M | Probing ignores the request and the build: every OS encoder is probed even for `-c`/`-e cpu`, and hardware probes run even when `-encoders` does not list the encoder [V] | `EncoderProbe.cs:35` | R08 |
+| B21 | H | VAAPI cannot be expressed by the argv layout: vneat puts `-vaapi_device <node>` before `-i` and appends `,format=nv12,hwupload` to `-vf`; `FfmpegArgv` has no slot for either. Old task T6.3 would use the first openable `/dev/dri/renderD*`; vneat probes every node and also tries `-low_power 1` [V for vneat]. On a hybrid Intel+NVIDIA laptop the first node can be the wrong GPU [I] | `Bash/vneat:738-743,752-754,763-768,952`; `FfmpegArgv.cs:7-13,18-24` | R05, R08 |
+| B22 | M | Native AOT is not enabled: no `PublishAot` anywhere; the Ubuntu CI publish log has no ILCompiler output; `IsAotCompatible` only turns on analyzers [V] | all `.csproj`/`.props`; CI log | R17 |
+| B23 | H | CI on `b015f38` (run 42006901420) is red on 2 of 3 OS [V]. Windows: `dotnet format --verify-no-changes` reports ENDOFLINE (no `.gitattributes`; CRLF checkout vs LF `.editorconfig`). macOS: step "Record binary size" fails (`stat -c%s` is GNU-only). Ubuntu green: 166 passed, 3 skipped, 710 ms (no real-FFmpeg test exists) | `.github/workflows/ci.yml` | R02 |
+| B24 | H | Tests that would have caught B01 to B10 do not exist: no ArgParser, integration, signal or startup tests (the only process-level tests are `--version`, `-V` and `--bogus` in `Cli/VersionTests.cs`); 42 of the 116 file paths named in old section F do not exist (22 under `tests/`, 5 under `src/`; some are legitimate renames, R16 reconciles them); `FakeExeHarness` hard-codes the Release path [V] | `FakeExeHarness.cs:9`, `tests/Drawplate.Tests/Cli/` | R02, R16 |
+| B25 | H | Installers cannot work: the generator concatenates ten modules that do not exist (only monolithic `install.sh`/`install.ps1`); `scripts/dist/` is absent so the README one-liners 404; no release workflow, no `installers.yml`, no Pester tests, no local release server [V] | `scripts/build-installers.ps1:20`, `README.md:15,18` | R18 |
+| B26 | M | Docs incomplete: README has no "Troubleshooting FFmpeg", no options table, cites a non-existent "section H.5"; `HARDWARE.md` is an empty table; ADR 0002 to 0004, dependabot, pin check missing; CHANGELOG lists unbuilt features [V] | `README.md`, `docs/` | R19 |
+| B27 | M | Status overstated: PROGRESS.md says DONE while its own [I] lines say hardware vectors and PowerShell were not run; approvals written by the implementing commits (see S) [V] | `PROGRESS.md`, `git log -p -- plan.md` | R19 |
+| B28 | L | `FailureClassifier` does not recognise real probe errors captured 2026-11-07 (`Cannot load libcuda.so.1`, `Error creating a MFX session`, `No VA display found`) [V]. Harmless for pass/fail; `--verbose` and N-GPU-02 rely on classification | `FailureClassifier.cs:9-37` | R08 |
+| B29 | L | Dead code: `comparison` in `FindCollisions` has two identical branches and is unused [V] | `ConversionPlanner.cs:111-113` | R10 |
+
+# Part 2. The startup failure, root causes
+
+Observed: `./drawplate --help` and `./drawplate` die with `Unhandled exception. System.NotSupportedException: capture the golden vector first (T6.7)` at `EncoderProfiles.Args ← FfmpegArgv.Probe ← EncoderProbe.ProbeOneAsync ← ProbeAllAsync ← Program.Main`. The trace matches the code exactly [V].
+
+1. **Why `EncoderProfiles.Args()` throws.** Its `switch` has arms for Cpu, Nvenc, Qsv and VideoToolbox and a default arm that throws (`EncoderProfiles.cs:5-12`). Vaapi and Amf fall into it. `EncoderSets.For(Linux)` is `[Nvenc, Qsv, Vaapi, Cpu]` (`EncoderSets.cs:25`) and the probe loop visits every entry (`EncoderProbe.cs:35`), so on the user's Linux machine NVENC and QSV probes run and fail normally, then VAAPI throws. VAAPI is the one encoder that works on that machine, and it is the one that is unimplemented. On Windows the same crash happens at Amf.
+2. **Unfinished work, missing vectors, or regression?** Unfinished work plus a process failure. Not a regression: the throw is in the file's first commit (`bce3c9d`, 2026-11-04). Plan I.1 said "VAAPI and AMF: not captured yet. Do not guess", and tasks T6.1 (capture), T6.3 (VAAPI) and T6.4 (AMF, "remove the NotSupportedException branches") were never done, yet P6 was ticked. The message cites T6.7 (hardware checklist) instead of T6.1. No test called `Probe`/`Convert` for every encoder kind, and no test started the app beyond `--version`, so it stayed hidden. The vectors exist in the vneat sources (R05 uses them), so "capture first" was a blocker only for marking them [V], not for implementing them.
+3. **Why help and no arguments reach FFmpeg probing.** `--help` is parsed into a flag that nothing reads (B02) and then the code falls into the convert flow. No-argument is a convert command by design (D.1: convert the current folder), so it legitimately needs FFmpeg, but probing must never throw and must follow validation (B05, B06). Help, version and parse errors must finish before any environment, file-system or process access.
+4. **Why `-h` fails.** B03: the option table keeps the dash in `ShortName`, the parser compares letters without it, so every short option is "unknown". There is no parser test.
+5. **Is startup separated into parsing, help, configuration and discovery?** No (B06). One 165-line `Main` mixes all four and has no exception boundary.
+6. **Are profiles, quality and FFmpeg arguments right?** CPU, NVENC, QSV and VideoToolbox match plan I.1 and the goldens; the CRF map `51 - q/2` is covered by unit tests that pass in CI [V]. VAAPI and AMF are missing (B01) and the argv builder cannot express VAAPI (B21). `-q` cannot be reached through its short form (B03), `-s` and `-o` are ignored (B11), and quality is read from raw text in `AppHost` instead of the validated options.
+
+# Part 3. Target environment and required behavior
+
+**Target machine:** Ubuntu 26.04 LTS; Intel Core i5-5200U (Broadwell, integrated Intel HD Graphics 5500 [I]); NVIDIA GeForce 820M, no NVENC; VAAPI works (owner statement). The research report lists Ubuntu 26.04's FFmpeg as 8.0.1 [V from the report]; the audit sandbox has 6.1.1 only, so behavior of FFmpeg 8 is [U] until R20. Never assume NVENC, QSV, or that a sandbox matches this machine.
+
+**Hypotheses to confirm in R20 (not facts):** H1 the iGPU encodes H.264 through the standard VAAPI entry point, not low-power; H2 `h264_qsv` fails on this GPU with current oneVPL builds; H3 FFmpeg 8 still accepts `-vaapi_device` (if not, add the `-init_hw_device vaapi=va:<node> -filter_hw_device va` form as a second probe variant, as a new stage approved by the owner).
+
+**Captured stderr (FFmpeg 6.1.1, no GPU, 2026-11-07) [V], used as fixtures in R08:**
+- NVENC: `Cannot load libcuda.so.1` · exit 255 · 0.06 s.
+- QSV: `Error creating a MFX session: -9.` · exit 171 · 0.38 s.
+- VAAPI: `No VA display found for device /dev/dri/renderD128.` / `Device creation failed: -22.` · exit 234 · 0.06 s.
+
+**Required behavior matrix (each row is a test in R16 unless noted):**
+
+| # | Situation | Required result |
 |---|---|---|
-| P0 Baseline and repo | [x] | APPROVED 2026-11-04 |
-| P1 Scaffold and guardrails | [x] | APPROVED 2026-11-04 |
-| P2 Core domain | [x] | APPROVED 2026-11-04 |
-| P3 Process layer | [x] | APPROVED 2026-11-04 |
-| P4 Conversion pipeline and CLI = milestone M1 | [x] | APPROVED 2026-11-04 |
-| P5 Terminal UI | [x] | APPROVED 2026-11-04 |
-| P6 Hardware encoders and the hardware note | [x] | APPROVED 2026-11-04 |
-| P7 FFmpeg acquisition and doctor | [x] | APPROVED 2026-11-04 |
-| P8 Installer scripts | [x] | APPROVED 2026-11-04 |
-| P9 Interactive menu | [x] | APPROVED 2026-11-04 |
-| P10 Release and docs | [x] | APPROVED 2026-11-04 |
+| 1 | `drawplate -h`, `--help` | The help text of R04 on stdout, exit 0. Touches no environment variable, file or process: works with PATH empty and FFmpeg missing |
+| 2 | `drawplate -V`, `--version` | `drawplate <version>`, exit 0, same independence |
+| 3 | `drawplate` with videos in the current folder | Converts them (D.1). Probing never throws |
+| 4 | `drawplate` in a folder without videos | E-RUN-01 with its hint, exit 1 |
+| 5 | FFmpeg missing | E-FF-01 (Linux text with the apt command on Ubuntu), exit 3, no stack trace |
+| 6 | `--ffmpeg-path` missing or not executable | E-FF-02 with reason `file not found` / `cannot be started`, exit 3, no fallthrough |
+| 7 | FFmpeg older than 6.0 | E-FF-07, exit 3 |
+| 8 | NVENC unavailable (no driver, unsupported GPU, not compiled in) | Probe fails or is skipped quietly; no error, no note when another hardware encoder works. `-e nvenc` gives E-RUN-02, exit 1 |
+| 9 | VAAPI available | Chain `[VAAPI] > [CPU]` (QSV first if it also works). `-l` prints `vaapi` then `cpu`. Conversions use `-vaapi_device <node>` and `format=nv12,hwupload`. A VAAPI failure on one file falls back to CPU for that file |
+| 10 | Only software | Chain `[CPU]`. GPU detected and hardware probes ran and all failed: N-GPU-01 once. No GPU: no note. `-c` / `-e cpu`: no hardware probe and no note |
+| 11 | No libx264 and no working hardware encoder | E-FF-03, exit 3 |
+| 12 | Ctrl-C, SIGTERM, SIGHUP, SIGQUIT | Within 5 s: ffmpeg killed, `.partial` removed, N-INT, exit 130 |
+| 13 | `-l` | Ids only on stdout in chain order, notes on stderr, exit 0; needs no input folder |
+| 14 | Any unexpected exception | `Unexpected error: <message>` on stderr, exit 1, never a stack trace |
 
-Order: P0, P1, P2, P3, P4 (M1), then P5 to P9 in any order the owner picks (P6 before P7 is recommended), then P10. Do not start a phase before its predecessor is approved.
+# Part 4. Repair stages
+
+**Stage rules (apply to every stage; they restate AGENTS.md, which wins on conflict):**
+1. Work one stage at a time, in order. Check "Depends" first. Branch `repair/R<nn>-<slug>`, one commit per stage (Conventional Commits, scopes per C.9, body lists the verify commands run).
+2. Tests first: write the listed tests, run them, see them fail for the stated reason, implement, see them pass. Never weaken, skip, rename or delete a test to pass.
+3. Only the files a stage lists may change. If another file must change, STOP and report it.
+4. Every stage ends with STD-BUILD (0 warnings, 0 errors), STD-FORMAT and STD-TEST (`Failed: 0`) and, from R02 on, a green CI run on all three OS. Never claim a result you did not see.
+5. User-facing text comes only from section E and from the exact texts given in these stages. Do not rephrase.
+6. Update PROGRESS.md (template I.6) with [V]/[I]/[U]; do not write APPROVED. The owner approves each stage on the "Approved stages" line under table S.
+7. No suppressions, no `NoWarn`, no `#pragma`, no `sudo`, no string-built command lines, no new package (except where a stage names it).
+8. Test names are `Subject_Condition_Expected`; tier traits per C.8. FakeExe scripts use the existing properties `if` (substring of the joined argv), `stdout`, `stderr`, `sleepMs`, `hang`, `createFile`, `exit` (`tests/FakeExe/Program.cs`).
+
+**Order and dependencies:** R01 → R02 → R03 → R04 → R05 → R06 → R07 → R08 → R09 → R10 → R11 → R12 → R13 → R14 → R15 → R16 → R17 → R18 → R19 → R20. Milestones: after R05 the reported crash is gone; after R12 conversion works (M1 functional); after R16 M1 is provable; R20 is the owner's hardware sign-off.
+
+### R01 Baseline and reproduction (no source change, no commit)
+
+- **Objective:** a working toolchain and a recorded "before" state.
+- **Evidence:** the auditor could not run .NET (B-header note); the diagnosis in Part 2 must be confirmed by running it.
+- **Tasks:**
+  1. Install the SDK pinned by `global.json` (10.0.x, `rollForward latestFeature`) in user space: `curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh && bash dotnet-install.sh --channel 10.0` (no `sudo`, rule 8). Put `~/.dotnet` on PATH. `dotnet --version` must print 10.0.x.
+  2. `git checkout main && git pull`; confirm HEAD is `b015f38` or later and `git status` is clean.
+  3. Run STD-BUILD, STD-TEST (Release) and STD-FORMAT; record counts (CI had 166 passed, 3 skipped).
+  4. `dotnet build src/Drawplate.slnx -c Debug`, then from `src/Drawplate.Console/bin/Debug/net10.0` run and record output and exit code of: `./drawplate --help`, `./drawplate -h`, `./drawplate -V`, `./drawplate -t`, and `./drawplate` inside an empty temp folder.
+- **Acceptance:** observed = `--help` and no-argument: `Unhandled exception. System.NotSupportedException: capture the golden vector first (T6.7)` (on a machine with FFmpeg installed); `-h`: `Unknown option -h.` exit 2; `-t`: `Unknown option -t.` exit 2; `-V`: `drawplate 0.0.0`. If any line differs, STOP and report: this plan's diagnosis needs revising.
+- **Tests:** manual only. **Depends:** none.
+
+### R02 CI and test-harness hygiene
+
+- **Objective:** a trustworthy 3-OS signal before behavior changes. **Evidence:** B23, B24.
+- **Tasks:**
+  1. Add `.gitattributes` with `* text=auto eol=lf`, then `git add --renormalize .` (expect no content change on Linux).
+  2. `.github/workflows/ci.yml`: in "Record binary size" replace `stat -c%s <file>` with `wc -c < <file>` (works on Linux, macOS, Windows Git Bash).
+  3. `tests/Drawplate.Tests/Process/FakeExeHarness.cs`: `FakeExePath` returns `FakeExe.dll` from `bin/Release/net10.0` if it exists, otherwise `bin/Debug/net10.0`; when neither exists throw `InvalidOperationException("Build tests/FakeExe first")`.
+- **Acceptance:** `dotnet test tests/Drawplate.Tests -c Debug` and `-c Release` both end `Failed: 0` with the same total as R01; the CI run for the branch is green on ubuntu, macos and windows (`gh run list --branch <branch>`).
+- **Tests:** existing suite. **Depends:** R01.
+
+### R03 Argument parser and option table
+
+- **Objective:** every option in D.1 parses; `-h`, `-V`, `setup`, `doctor` are recognised. **Evidence:** B02, B03, B04, B11 (`-o`).
+- **Files:** `src/Drawplate.Console/Cli/{OptionTable,ArgParser,ParsedCommand}.cs`, `src/Drawplate.Models/Cli/RawOptions.cs`, new `tests/Drawplate.Tests/Cli/ArgParserTests.cs`.
+- **Tasks:**
+  1. `OptionEntry.ShortName` holds the bare letter (`"i"`, not `"-i"`); `""` means none. Add `ValueName` (for example `"folder"`) and `Help` to every entry; their texts are exactly those in the R04 help block. Keep existing long names and aliases (D.1).
+  2. `RawOptions` gets `string? OutputFolder`; the `-o`/`--output` setter stores it.
+  3. Parsing algorithm, left to right (replace `ParseShort`):
+     ```
+     arg "--"            -> every later argument is a file
+     arg "-" or no dash  -> file
+     arg "--name[=v]"    -> long option (existing code; E-USAGE-01 / -02 / -03 as today)
+     arg "-abc..."       -> for k over the letters:
+         entry = by letter, else return Error(E-USAGE-01 short form for that letter)
+         flag:        set it; if it is Help return Help(); if Version return Version()
+         takes value: rest of the cluster is the value ("-q50"); else next argument ("-q 50");
+                      else return Error(E-USAGE-02 with text "-<letter>"); stop the cluster
+     ```
+     Help and Version return at the moment they are reached, even when later arguments are invalid (`-V --bogus` is Version) and even with files present (`a.mp4 -h` is Help). An earlier error still wins (`--bogus -V` is Error).
+  4. Subcommands: only when `args[0]` is exactly `setup` or `doctor`. Remaining arguments use the same table. A positional file after a subcommand returns `E_USAGE_01_Long(<that argument>)`. `ParsedCommand.Doctor` becomes `Doctor(RawOptions)` (it needs `--ffmpeg-path`, `--verbose`). `./setup` and `a.mp4 setup` are files.
+  5. `ParsedCommand` kinds produced: `Help`, `Version`, `Setup`, `Doctor`, `Convert`, `Error`.
+- **Acceptance:** `grep -n 'ShortName = "-' src` returns nothing; all 15 table entries resolve by their letter or long name; the tests below pass.
+- **Tests (`ArgParserTests`, T0):** `Short_AllLetters_Resolve` (theory over the table), `Short_H_ReturnsHelp`, `Long_Help_ReturnsHelp`, `Short_V_ReturnsVersion`, `Version_AfterFlag_ReturnsVersion` (`-t -V`), `Version_BeforeBadArg_ReturnsVersion`, `BadArg_BeforeVersion_ReturnsError`, `Help_WithFiles_ReturnsHelp`, `Cluster_FlagsAndAttachedValue_Parse` (`-tcq50`), `Value_NextArgument_Parses` (`-q 50`), `Value_Missing_E_USAGE_02` (`-q`), `Output_Short_StoredInOutputFolder` (`-o out`), `Output_Long_Equals_Form` (`--output=out`), `DoubleDash_RestAreFiles` (`-- -x.mp4`), `Setup_First_ReturnsSetup`, `Setup_WithFile_E_USAGE_01`, `Setup_NotFirst_IsFile`, `Doctor_First_ReturnsDoctor`, `Unknown_Short_E_USAGE_01`, `Unknown_Long_E_USAGE_01`. **Depends:** R02.
+
+### R04 Help, version and the entry point
+
+- **Objective:** `-h`, `--help`, `-V`, `--version` and parse errors finish before any environment, file or process access; nothing can print a stack trace. **Evidence:** B02, B05, B06, B07.
+- **Files:** new `src/Drawplate.Console/Program.cs`; `AppHost.cs` (remove the `Program` class; keep an `internal static class AppHost` with `int Run(string[] args, CancellationToken ct)`); new `Cli/HelpText.cs`, `VersionInfo.cs`; new `tests/Drawplate.Tests/Cli/{HelpTextTests,CliStartupTests}.cs`; new `tests/Drawplate.Tests/Golden/help.txt`.
+- **Tasks:**
+  1. New `Program.cs`: `Program.Main(string[] args)` is `{ using var signals = new SignalHandler(); return AppHost.RunGuarded(() => AppHost.Run(args, signals.Token)); }`. `AppHost.RunGuarded(Func<int> body)` is `internal static` and holds the two catch blocks: `catch (OperationCanceledException)` → N-INT on stderr, return 130; `catch (Exception ex)` → `Unexpected error: {ex.Message}` on stderr, return 1. These are the only `catch (Exception)` allowed (C.4: AppHost only). `StartupObject` stays `Drawplate.Console.Program`.
+  2. `AppHost.Run` begins with a method `Dispatch(args)` that uses only `ArgParser`, `HelpText`, `VersionInfo`, `Messages`. Help prints `HelpText.Render()` to stdout, exit 0. Version prints N-VERSION, exit 0. Error prints the message (text, then hint indented two spaces) to stderr, exit 2. Delete the special case `args.Length == 1 && (--version | -V)`. Use the `ExitCode` enum instead of literals.
+  3. `VersionInfo.Current`: entry assembly `AssemblyInformationalVersionAttribute` with any `+suffix` removed; `"0.0.0"` when absent. Replace both literals.
+  4. `Setup`, `Doctor`, interactive (`-m`) and `-y`/`-n` keep printing E-TEMP-01 (exit 2) until R14.
+  5. `HelpText.Render()` is generated from `OptionTable`: the fixed text below with the Options block built as two spaces, the left column (`-x, --long <value>`; four spaces instead of `-x, ` when there is no short name) padded to 24 characters, two spaces, then `Help`. LF line endings, no trailing spaces, one final newline. `tests/Drawplate.Tests/Golden/help.txt` is this block copied by hand, not produced by the code.
+- **Help text (exact):**
+  ```
+  drawplate - convert videos to H.264/AAC MP4 with FFmpeg
+
+  Usage:
+    drawplate [options] [file ...]     convert the given files
+    drawplate [options] -i <folder>    convert every video in a folder (not recursive)
+    drawplate                          convert the current folder
+    drawplate setup [-y] [-n]          show how to get FFmpeg; with consent, run the install command
+    drawplate doctor                   read-only check of FFmpeg, encoders and hardware
+
+  Options:
+    -i, --input <folder>      Folder that contains the videos (default: current folder)
+    -o, --output <folder>     Output folder (default: <input>/compressed, or ./compressed for files)
+    -t, --no-timestamps       Do not copy the original file dates
+    -q, --quality <1-100>     Quality, higher is better (default: 50)
+    -s, --max-size <size>     Largest output size: sd, hd, fullhd or 4k (default: none)
+    -e, --encoder <name>      Encoder name or auto (default: auto); -l shows what works here
+    -c, --cpu                 Use the CPU (libx264) only; same as -e cpu
+    -l, --list-encoders       Print the encoders that work on this machine, then exit
+    -m, --interactive         Interactive menu (needs a terminal)
+    -y, --install-deps        Run the FFmpeg install command without asking, then exit
+    -n, --no-install          Never offer or run an install (wins over -y)
+    -h, --help                Show this help
+    -V, --version             Print the version
+        --ffmpeg-path <file>  Use this FFmpeg executable
+        --verbose             Print ffmpeg arguments and stderr tails to stderr
+
+  Exit codes: 0 ok, 1 failure, 2 usage error, 3 FFmpeg unavailable, 130 interrupted.
+  ```
+- **Acceptance:** with the built binary, `-h`, `--help`, `-V`, `--version` each exit 0 when run with `PATH=` (empty), `DRAWPLATE_FFMPEG=/nonexistent` and an empty current folder; help output equals `help.txt` byte for byte; `--bogus` exits 2 with E-USAGE-01 on stderr and nothing on stdout; no stack trace in any case.
+- **Tests:** `HelpText_MatchesGolden`, `HelpText_EveryOptionListed`, `VersionInfo_StripsCommitSuffix`, `Cli_Help_ExitsZero_NoEnvironment` (all four spellings, empty PATH), `Cli_Help_StartsNoProcess` (a FakeExe named `ffmpeg` on PATH with `FAKE_EXE_LOG` set; the log file must not exist afterwards), `Cli_UnknownOption_ExitsTwo`, `AppHost_RunGuarded_UnexpectedException_ReturnsOneNoStackTrace` and `AppHost_RunGuarded_Cancelled_Returns130` (call `AppHost.RunGuarded` with a lambda that throws; capture stderr with `Console.SetError`; no test-only switch may be added to production code). **Depends:** R03.
+
+### R05 Encoder profiles: VAAPI, AMF, and the argv layout
+
+- **Objective:** remove the crash (B01); make VAAPI expressible (B21). Models only. **Evidence:** B01, B21.
+- **Files:** `src/Drawplate.Models/Encoding/{EncoderProfiles,FfmpegArgv}.cs`, new `EncoderProfile.cs`, `VaapiTarget.cs`; `tests/Drawplate.Tests/Unit/{EncoderTests,GoldenArgvTests}.cs`; new goldens in `tests/Drawplate.Tests/Golden/`.
+- **Tasks:**
+  1. `public sealed record VaapiTarget(string Device, bool LowPower);` and `public sealed record EncoderProfile(ImmutableArray<string> PreInput, string? FilterSuffix, ImmutableArray<string> Encode);`
+  2. Replace `EncoderProfiles.Args(kind, quality)` with `EncoderProfiles.For(EncoderKind kind, int quality, VaapiTarget? vaapi = null)`. `C` = `QualityScale.ToCrf(quality)`, `Q` = quality. Exhaustive `switch`; the default arm throws `ArgumentOutOfRangeException` (a programmer error, not reachable from user input). Remove every `NotSupportedException`. Update the three calls in `EncoderTests.cs`.
+     | Kind | PreInput | FilterSuffix | Encode |
+     |---|---|---|---|
+     | Cpu, Nvenc, Qsv, VideoToolbox | none | none | exactly the current arrays |
+     | Vaapi | `-vaapi_device <Device>` | `format=nv12,hwupload` | `-c:v h264_vaapi -global_quality C`, plus `-low_power 1` when `LowPower` |
+     | Amf | none | none | `-c:v h264_amf -quality quality -rc cqp -qp_i C -qp_p C -pix_fmt yuv420p` |
+     `Vaapi` with `vaapi == null` throws `ArgumentNullException`. Sources: `Bash/vneat:738-743,763-768` (VAAPI), `PowerShell/vneat.ps1:530` (AMF). Both are read from source, not run: mark [I] in `docs/HARDWARE.md` until R20.
+  3. `FfmpegArgv.Convert(source, partial, kind, quality, cap, vaapi = null)` order: `-nostdin -hide_banner -loglevel error -nostats -progress pipe:1` + PreInput + `-i SRC -map 0:v:0 -map 0:a:0? -sn -dn -vf <cap filter>[,<FilterSuffix>]` + Encode + `-c:a aac -b:a 96k -movflags +faststart -f mp4 -y PARTIAL`. `FfmpegArgv.Probe(kind, vaapi = null)`: `-nostdin -hide_banner -loglevel quiet` + PreInput + `-f lavfi -i color=c=black:s=256x256:d=0.1 -vf scale=trunc(iw/2)*2:trunc(ih/2)*2[,<FilterSuffix>]` + Encode + `-frames:v 1 -f null -`. The filter stays one argv element.
+  4. New goldens (one element per line; shown space-separated; device `/dev/dri/renderD128`, q 50):
+     - `vaapi-q50.txt`: `-nostdin -hide_banner -loglevel error -nostats -progress pipe:1 -vaapi_device /dev/dri/renderD128 -i SRC -map 0:v:0 -map 0:a:0? -sn -dn -vf scale=trunc(iw/2)*2:trunc(ih/2)*2,format=nv12,hwupload -c:v h264_vaapi -global_quality 26 -c:a aac -b:a 96k -movflags +faststart -f mp4 -y PARTIAL`
+     - `vaapi-lp-q50.txt`: same with `-c:v h264_vaapi -global_quality 26 -low_power 1`.
+     - `probe-vaapi.txt`: `-nostdin -hide_banner -loglevel quiet -vaapi_device /dev/dri/renderD128 -f lavfi -i color=c=black:s=256x256:d=0.1 -vf scale=trunc(iw/2)*2:trunc(ih/2)*2,format=nv12,hwupload -c:v h264_vaapi -global_quality 26 -frames:v 1 -f null -`
+     - `amf-q50.txt` and `probe-amf.txt`: Encode `-c:v h264_amf -quality quality -rc cqp -qp_i 26 -qp_p 26 -pix_fmt yuv420p` in the same two layouts.
+     - `videotoolbox-q50.txt`, `probe-videotoolbox.txt`: Encode `-c:v h264_videotoolbox -q:v 50 -profile:v high -pix_fmt yuv420p`.
+     The existing cpu, nvenc, qsv goldens must pass unchanged.
+- **Acceptance:** `grep -rn NotSupportedException src` returns nothing; all goldens match; no existing golden edited.
+- **Tests (T0):** `Convert_Vaapi_Q50_MatchesGolden`, `Convert_VaapiLowPower_Q50_MatchesGolden`, `Probe_Vaapi_MatchesGolden`, `Convert_Amf_Q50_MatchesGolden`, `Probe_Amf_MatchesGolden`, `Convert_VideoToolbox_Q50_MatchesGolden`, `Probe_VideoToolbox_MatchesGolden`, `Convert_VaapiWithHdCap_FilterIsCapThenEvenThenSuffix`, `Profile_Vaapi_WithoutTarget_ThrowsArgumentNull`, **`Probe_EveryKindOfEveryOs_DoesNotThrow`** (regression for B01: for each OS in `OperatingSystemKind`, each kind in `EncoderSets.For(os)`, `FfmpegArgv.Probe` and `Convert` return a non-empty list; pass a `VaapiTarget` when the kind is Vaapi). **Depends:** R04.
+- **Milestone:** from here `drawplate` no longer dies with `NotSupportedException` (the probe loop completes); conversion is still broken (R09, R10).
+
+### R06 Process launcher hardening
+
+- **Objective:** timeouts and cancellation work while output is being read; no incomplete stderr; start failures are values. **Evidence:** B14, B05 (second half).
+- **Files:** `src/Drawplate.Services/Processes/{ProcessOptions,ProcessLauncher}.cs`, new `ProcessStartFailedException.cs`; `tests/Drawplate.Tests/Process/LauncherTests.cs`.
+- **Tasks:**
+  1. `ProcessOptions` gets a last optional member `CancellationToken Cancellation = default`.
+  2. In the running-process constructor: when `Timeout` is set, start a `CancellationTokenSource(timeout)` whose callback sets `_timedOut = true` and calls `KillTree()`; when `Cancellation.CanBeCanceled`, register `KillTree` on it. Dispose both in `DisposeAsync`. Both start at process start, not at `WaitAsync`.
+  3. `WaitAsync(ct)`: await `WaitForExitAsync(ct)`; then await **both** reader tasks (stdout and stderr), bounded to 5 s (`Task.WhenAny(readers, Task.Delay(5s))`) so a grandchild holding a pipe cannot hang it; return `-1` when `_timedOut`, else the exit code. Remove the `Task.WhenAny(waitTask, delayTask)` block. If `ct` is cancelled: `KillTree()`, then throw `OperationCanceledException`.
+  4. `Start`: wrap `Process.Start` and catch `Win32Exception`, `InvalidOperationException`, `IOException`; throw `ProcessStartFailedException(executable, message)` (public sealed, in Services).
+  5. `KillTree()`: `try { _process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { } catch (Win32Exception) { }` with a comment why (already exited). Delete `GetChildProcessIds*` (the `/proc` walker).
+- **Acceptance:** build 0 warnings; `grep -rn GetChildProcessIds src` empty; the tests below pass on Linux (and in CI on macOS and Windows).
+- **Tests (T1, FakeExe):** `Timeout_WhileStdoutOpen_KillsAndReportsTimedOut` (script `{"hang":true}`, 1 s timeout, whole call under 5 s), `Cancel_WhileDrainingStdout_KillsWithinThreeSeconds`, `Wait_AfterManyStderrLines_TailHasLastLine` (script prints 2000 stderr lines; run in a loop of 20), `Start_MissingExecutable_ThrowsProcessStartFailed`, `Start_NotExecutable_ThrowsProcessStartFailed` (Unix only, text file without exec bit). **Depends:** R02 (does not need R05; order kept for review simplicity).
+
+### R07 Locator, FFmpeg info result, platform detection
+
+- **Objective:** E-FF-02 and E-FF-07 reach the user; no hidden process spawns; per-OS known folders in one place. **Evidence:** B06 (second half), B15, B16.
+- **Files:** `src/Drawplate.Services/Ffmpeg/{FfmpegLocator,FfmpegInfoService,FfmpegInfo}.cs`, new `KnownFolders.cs`; `src/Drawplate.Services/Platform/PlatformDetector.cs`; `tests/Drawplate.Tests/Process/{LocatorTests,InfoServiceTests}.cs`, new `PlatformTests.cs`; `tests/Drawplate.Tests/Architecture/ArchitectureTests.cs`.
+- **Tasks:**
+  1. `FfmpegLocator.Locate`: steps 1 (`--ffmpeg-path`) and 2 (`DRAWPLATE_FFMPEG`) return a candidate **even when the file does not exist** (authoritative; no fallthrough). The info step then reports E-FF-02. Update test `Environment_Unusable_DoesNotFallThrough` to expect the candidate `/bad/ffmpeg` with `FfmpegSource.Environment`, and `NothingFound_ReturnsNull` stays.
+  2. PATH parsing everywhere uses `Split(Path.PathSeparator, RemoveEmptyEntries | TrimEntries)` and ignores entries that are not rooted (`Path.IsPathRooted`).
+  3. `KnownFolders.For(OperatingSystemKind os, Func<string, string?> getEnv)` returns the D.5 list for the OS (Windows: WinGet Links, WinGet package `bin` folders found by enumerating `Gyan.FFmpeg_*` then `ffmpeg-*` then `bin`, Scoop shims, Chocolatey bin; macOS and Linux: `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`). `AppHost`, `AcquisitionFlow` and `DoctorService` call it; delete their private copies.
+  4. `FfmpegInfoService.GetInfoAsync` returns `FfmpegInfoResult(FfmpegInfo? Info, FfmpegNotRunnable? NotRunnable, FfmpegTooOld? TooOld)` (types already exist). Reasons: `file not found` (candidate path missing), `cannot be started` (`ProcessStartFailedException`), `exit code {n}`, `timed out`, `unreadable version output`. Too old = below 6.0 (master builds `N-<n>-g<hash>` count as new). Pass `ProcessOptions.Cancellation`.
+  5. `PlatformDetector`: add `DetectOs()` (pure, no tool scan). `Detect(pathFolders, fileExists)` finds package managers by looking for the executable in PATH folders (`.exe`, `.cmd`, `.bat` also tried on Windows) and **starts no process**; keep `Detect()` as a wrapper using the real environment. Delete `Process.Start`. Detection runs only where needed (missing FFmpeg, `setup`, `doctor`), never for help, version or a normal conversion.
+  6. `ArchitectureTests` add `Only_ProcessLauncher_StartsProcesses`: scan `src/**/*.cs` for `Process.Start(` and `new ProcessStartInfo` outside `Processes/ProcessLauncher.cs`; any hit fails (named by old task T7.6).
+- **Acceptance:** tests pass; `drawplate --ffmpeg-path /nope -l` prints E-FF-02 `(file not found)` exit 3 (after R11) — until then verify with `InfoServiceTests`.
+- **Tests:** `Locator_ArgumentMissing_ReturnsCandidate`, `Locator_EmptyPathEntry_NotResolvedAgainstCwd`, `Locator_RelativePathEntry_Ignored`, `KnownFolders_Linux_Order`, `KnownFolders_Windows_UsesLocalAppData`, `InfoService_MissingFile_ReportsFileNotFound`, `InfoService_StartFails_ReportsCannotBeStarted`, `InfoService_Version5_ReportsTooOld`, `InfoService_MasterBuild_NotTooOld`, `Platform_Detect_StartsNoProcess`, `Platform_ToolOnPath_WindowsExtensionsTried`, `Only_ProcessLauncher_StartsProcesses`. **Depends:** R06.
+
+### R08 Encoder probing
+
+- **Objective:** probe only what was asked for and what exists; find the right VAAPI node; never hang or throw. **Evidence:** B20, B21, B28.
+- **Files:** `src/Drawplate.Services/Ffmpeg/{EncoderProbe,ProbeResult}.cs`, new `src/Drawplate.Services/Platform/VaapiDevices.cs`, `src/Drawplate.Models/Failures/FailureClassifier.cs` (only if needed for B28); new `tests/Drawplate.Tests/Process/EncoderProbeTests.cs`; fixtures `tests/Drawplate.Tests/Fixtures/stderr/{nvenc-no-libcuda,qsv-mfx-session,vaapi-no-display}.txt` containing the captured texts of Part 3 verbatim.
+- **Tasks:**
+  1. `ProbeResult` gains `VaapiTarget? Vaapi = null`; `ProbeFailureKind` gains `NotListed` and `NoDevice`.
+  2. `EncoderProbe` constructor gains `TimeSpan? probeTimeout = null` (default 15 s) and `Action<string>? log = null` (receives the argv line and, for failures, the stderr tail; used by `--verbose`).
+  3. New `ProbeAsync(FfmpegInfo info, ImmutableArray<EncoderKind> kinds, CancellationToken ct)`; keep `ProbeAllAsync(info, ct)` as `ProbeAsync(info, EncoderSets.For(os), ct)`. For each kind:
+     - **Cpu:** fails with `EncoderUnavailable`, no process, when `!info.HasLibx264`; otherwise run the probe.
+     - **Hardware kinds:** when the FFmpeg encoder (`h264_nvenc`, `h264_qsv`, `h264_vaapi`, `h264_amf`, `h264_videotoolbox`) is not in `info.Encoders`: fail with `NotListed`, **no process**.
+     - **Vaapi:** `VaapiDevices.Find(listDir)` returns `/dev/dri/renderD*` paths, ordinal-sorted (`listDir` injectable for tests). None → `NoDevice`, no process. For each node try `VaapiTarget(node, false)` then `VaapiTarget(node, true)`; the first pass wins and is stored in `ProbeResult.Vaapi`; all fail → the last failure.
+     - Every run uses `ProcessOptions(Timeout: probeTimeout, Cancellation: ct)`. `ProcessStartFailedException` and a timeout are failures (`Unknown`), never exceptions. `OperationCanceledException` propagates.
+  4. Classification (B28): only add a recognised pattern if a fixture needs it; unknown text stays `Unknown`. A test per fixture proves `Passed == false` and no exception.
+- **Acceptance:** with FakeExe as ffmpeg: an unlisted `h264_nvenc` starts no process; with `kinds = [Cpu]` exactly one probe argv is logged; a hung probe is killed at the injected timeout.
+- **Tests (T1):** `Probe_HardwareNotListed_NoProcess`, `Probe_Vaapi_NoDevices_NoDevice_NoProcess`, `Probe_Vaapi_FirstNodeFails_SecondPasses_UsesSecond` (FakeExe `if` on `renderD129`), `Probe_Vaapi_StandardFails_LowPowerPasses`, `Probe_Vaapi_VaapiTargetRecorded`, `Probe_OnlyRequestedKinds_LogsOneProbe`, `Probe_Hang_KilledAtTimeout` (timeout 1 s), `Probe_Cpu_NoLibx264_NoProcess`, `Probe_StartFails_ReturnsFailedNotThrow`, `Probe_Cancelled_Throws`, `Probe_RealStderrFixtures_AllFail` (theory over the 3 fixtures). **Depends:** R05, R06, R07.
+
+### R09 Media probing without ffprobe
+
+- **Objective:** every valid video converts. **Evidence:** B10 (the reason nothing converts).
+- **Files:** `src/Drawplate.Services/Ffmpeg/MediaProbe.cs`, new `FfprobeLocator.cs`; `tests/Drawplate.Tests/Process/MediaProbeTests.cs`.
+- **Tasks:**
+  1. Constructor becomes `MediaProbe(IProcessLauncher launcher, string ffmpegPath, string? ffprobePath)`; `FfprobeLocator.Find(ffmpegPath, pathFolders, fileExists)` returns `ffprobe`/`ffprobe.exe` next to FFmpeg, else on PATH, else null.
+  2. `InspectAsync`: with ffprobe, keep the current two queries but pass `ProcessOptions(Timeout: 10 s, Cancellation: ct)` and treat `ProcessStartFailedException` as "use the banner". Without ffprobe (or on its failure) run `FfmpegArgv.Banner(path)` through the launcher, wait, ignore the exit code (it is 1 by design), and read `StderrTail` with `FfmpegBannerParser.ParseDuration` and `HasVideoStream` (D.5: ffprobe is optional).
+  3. Result stays `MediaInfo(TimeSpan? Duration, bool HasVideo)`. Corrupt input yields `HasVideo = false`, which the runner reports as a failure (regression R-T1).
+- **Acceptance:** with FakeExe printing the banner fixtures, durations and stream flags are right; the app construction in `AppHost` is not changed here (R10 does it).
+- **Tests (T1):** `Banner_VideoAndAudio_DurationAndHasVideo`, `Banner_AudioOnly_HasVideoFalse`, `Banner_DurationNA_DurationNull`, `Ffprobe_Present_UsedInsteadOfBanner`, `Ffprobe_StartFails_FallsBackToBanner`, `FfprobeLocator_Sibling_Found`, `FfprobeLocator_None_ReturnsNull`. **Depends:** R06, R07.
+
+### R10 Input discovery and planning wiring
+
+- **Objective:** folder and file modes produce a correct plan; `-o` and validated options are honored. **Evidence:** B08, B09, B11, B29.
+- **Files:** `src/Drawplate.Services/Conversion/InputDiscovery.cs`; `src/Drawplate.Models/Cli/{ConvertOptions,OptionValidator}.cs`; `src/Drawplate.Models/Planning/ConversionPlanner.cs` (dead code only); `src/Drawplate.Console/AppHost.cs` (convert flow steps 2 and 5); new `tests/Drawplate.Tests/Integration/InputDiscoveryTests.cs`, `tests/Drawplate.Tests/Cli/ConvertFlowTests.cs`.
+- **Tasks:**
+  1. `InputDiscovery.FromFolder` returns **full paths** (`Path.Combine(folder, name)`), only regular files, sorted with `InputRules.NameOrder` (`OrderBy`, not a discarded `Array.Sort`).
+  2. `ConvertOptions` gains `string? OutputFolder`; `OptionValidator` fills it from `RawOptions.OutputFolder` (no file-system check there).
+  3. `AppHost` convert flow, in the order of old T4.6 with these rules: validate with `PlatformDetector.DetectOs()`; use only `ConvertOptions` afterwards (never `int.Parse(raw)`); sources = explicit files, else `InputDiscovery.FromFolder(inputFolder ?? ".")` (E-USAGE-07 when missing); output = `-o`, else `<input>/compressed` (folder mode) or `./compressed` (files mode); an existing file at the output path is E-USAGE-08 (exit 2); build the plan with `ConversionPlanner.Build`; print W-01 and W-02 (stderr) and N-01 (stdout, skip glyph) for the matching statuses (`Missing`, `NotAFile`, `SkipUnsupported`); name collisions → E-USAGE-09, exit 2, no process started; **E-RUN-01 (exit 1) when no file has status `Convert`, `SkipExists` or `SkipInsideOutput`** (so output-equals-input is exit 0, unsupported-only is exit 1: regressions R-T6, R-T7).
+  4. Delete the unused `comparison` local in `FindCollisions` (B29); collision matching stays `OrdinalIgnoreCase` (C.7).
+- **Acceptance:** a folder with 3 `.mp4`, 1 `.MOV`, 1 `notes.txt`, 1 subfolder named `x.mp4`, 1 hidden `.a.mp4` plans exactly the 4 videos, sorted, as full paths.
+- **Tests:** `Discovery_Folder_FullPathsSortedFilesOnly`, `Discovery_Folder_MissingFolder_E_USAGE_07`, `Discovery_Hidden_Skipped`, `Discovery_UppercaseExtension_Matched`, `Flow_OutputFlag_Honored`, `Flow_OutputIsFile_E_USAGE_08`, `Flow_Collision_E_USAGE_09_NoProcess`, `Flow_UnsupportedOnly_E_RUN_01_Exit1`, `Flow_OutputEqualsInput_AllSkipped_Exit0`. (Flow tests drive `AppHost.Run` in-process with FakeExe as ffmpeg and injected console writers; add `TextWriter stdout, TextWriter stderr` parameters to `AppHost.Run` in this stage.) **Depends:** R04, R07, R09.
+
+### R11 Encoder selection, `-l`, hardware note, plan card
+
+- **Objective:** `-c`, `-e`, `-s`, `-l` work; the chain reflects the machine; the note appears only when meaningful. **Evidence:** B11, B12, B19 (plan card).
+- **Files:** `src/Drawplate.Console/AppHost.cs`; `tests/Drawplate.Tests/Cli/EncoderFlowTests.cs`.
+- **Tasks:** after FFmpeg is located and `FfmpegInfoResult` is OK (E-FF-02 / E-FF-07 / E-FF-01 per Part 3 rows 5 to 7):
+  1. Kinds to probe: `-c` or `-e cpu` → `[Cpu]`; `-e X` → `[X, Cpu]`; otherwise `EncoderSets.For(os)`. Call `EncoderProbe.ProbeAsync`.
+  2. `EncoderChain.Build(requestedId, os, passedKinds)`. Error → E-RUN-02 (exit 1). Empty chain → E-FF-03 (exit 3). Remember the `VaapiTarget` of the passed Vaapi result and give it to the runner (R12).
+  3. `-l`: print the chain ids in order on stdout, one per line, exit 0; it needs no input folder and runs before any discovery. Notes go to stderr.
+  4. Hardware note: `HardwareNote.For(GpuDetector.HasGpu(), anyHardwarePassed, nvencDriverTooOld, minimumDriver)`, **only when at least one hardware probe actually ran**; printed once, after the plan card (stdout), or on stderr for `-l`. `nvencDriverTooOld` comes from `FailureClassifier` on the NVENC stderr tail.
+  5. Plan card via `IRenderer.PlanCard` with real values: quality and its CRF, `-s` size and pixel box (D.4: `hd 1280x720`) or `none`, chain text `[VAAPI] > [CPU]` via the encoder badges, file count, total input size, timestamps kept or not. Size cap comes from `ConvertOptions.MaxSize`, not `SizeCap.None`.
+  6. `--verbose` passes `Console.Error.WriteLine` as the probe `log`.
+- **Acceptance (FakeExe as ffmpeg):** NVENC probe fails and VAAPI passes → plan card shows `[VAAPI] > [CPU]`, no note, `-l` prints `vaapi` then `cpu`; everything fails → chain `[CPU]` and exactly one N-GPU-01 when a GPU is faked present; `-c` → one probe argv logged and no note; `-e nvenc` with a failing NVENC → E-RUN-02 exit 1.
+- **Tests:** `Flow_NvencFails_VaapiPasses_ChainVaapiCpu`, `Flow_AllHardwareFails_GpuPresent_OneNote`, `Flow_AllHardwareFails_NoGpu_NoNote`, `Flow_CpuFlag_NoHardwareProbe_NoNote`, `Flow_EncoderNvencBroken_E_RUN_02`, `Flow_NoLibx264_NoHardware_E_FF_03`, `Flow_ListEncoders_IdsOnStdout_NoInputNeeded`, `Flow_MaxSize_AppearsInPlanCardAndArgv`. (`GpuDetector` gets an injectable seam for tests: `HasGpu(Func<...>)` overload.) **Depends:** R08, R10.
+
+### R12 Conversion loop, renderer, summary, `--verbose`
+
+- **Objective:** files convert end to end and the output matches D.4. **Evidence:** B10, B19.
+- **Files:** `src/Drawplate.Console/AppHost.cs`, `Ui/{IRenderer,PlainRenderer}.cs`; `src/Drawplate.Services/Conversion/ConversionRunner.cs`; new `tests/Drawplate.Tests/Cli/PlainRendererTests.cs`.
+- **Tasks:**
+  1. `PlainRenderer(TextWriter output, bool utf8)` replaces direct `Console` use; AppHost chooses glyph set per C.5 (UTF-8 and `TERM` not `dumb`).
+  2. `ConversionRunner` takes `MediaProbe` built as `new MediaProbe(launcher, ffmpegPath, FfprobeLocator.Find(...))`, an optional `VaapiTarget? vaapi` on `RunAsync`, and `Action<string>? log` (argv and stderr tail on failure). It passes `ProcessOptions(Cancellation: ct)`; `ProcessStartFailedException` → `FileResult.Failed("cannot start ffmpeg")`. The existing per-encoder fallback stays; a Vaapi failure falls back to the next chain entry.
+  3. AppHost loop: skipped files print `– [i/N] <name>  skipped: <reason>` (reasons `already exists`, `already in the output folder`); converted files `✓ [i/N] <name>  <in> → <out>  ↓32%  [VAAPI]  0:01` (`↑` when larger); failures `✗ [i/N] <name>  <reason>`; real sizes, encoder actually used and elapsed time per file; names pass through `Sanitizer.ForDisplay`.
+  4. Summary via `IRenderer.Summary` with real totals: output bytes, encoder counts (`[VAAPI] x3 [CPU] x1`), elapsed, output folder; last line `All done.` or `Finished with N failure(s).`; exit 1 when any file failed, else 0.
+  5. `--verbose`: runner `log` prints `ffmpeg <argv>` and, on failure, the stderr tail, to stderr.
+- **Acceptance:** `PlainRenderer` output for a fixed set of inputs equals golden text written by hand from D.4 (ASCII and UTF-8 variants).
+- **Tests:** `PlainRenderer_PlanCard_Golden`, `PlainRenderer_FileLines_Golden`, `PlainRenderer_Summary_Golden`, `PlainRenderer_AsciiFallback_NoNonAscii`, `PlainRenderer_NoAnsiEver`, `Runner_VaapiFails_FallsBackToCpu` (FakeExe), `Runner_StartFails_FailedResult`, `Flow_OneBadFile_OthersContinue_Exit1`, `Flow_Rerun_SkipsExisting_Exit0`. **Depends:** R11.
+- **Milestone:** `drawplate` converts a folder with FakeExe; real FFmpeg proof comes in R16.
+
+### R13 Signals and cancellation
+
+- **Objective:** Ctrl-C, SIGTERM, SIGHUP, SIGQUIT stop everything within 5 s. **Evidence:** B13.
+- **Files:** `src/Drawplate.Console/Signals/SignalHandler.cs`, `Program.cs`, `AppHost.cs`; new `tests/Drawplate.Tests/Cli/SignalTests.cs`.
+- **Tasks:**
+  1. `SignalHandler` already owns a `CancellationTokenSource` and exposes `Token`, but nothing ever cancels it. Make it register `PosixSignalRegistration.Create` for `SIGINT`, `SIGTERM`, `SIGHUP`, `SIGQUIT` and keep the `Console.CancelKeyPress` handler too (it is the Ctrl-C path where posix signal registration is unavailable; which of the four signals Windows delivers is [U] until R17 CI). On the first signal: set `context.Cancel = true` (or `e.Cancel = true`) and call `Cancel()` on the CTS. Later signals do nothing extra, so cleanup can finish. Dispose the registrations in `Dispose`.
+  2. Every `await` in the host and every `ProcessOptions` receive `signals.Token`; replace each `CancellationToken.None`.
+  3. On `OperationCanceledException` the host prints N-INT, returns 130; the runner's `finally` deletes the unique partial file (already coded; assert it).
+- **Acceptance:** Unix: SIGTERM sent to the Drawplate PID alone while a FakeExe "ffmpeg" hangs → exit 130 within 5 s, no FakeExe process left, no `.partial` file.
+- **Tests (T1, Unix only via `UnixFact`):** `Sigterm_ToPidOnly_Exit130Within5s`, `Sigint_Exit130`, `Sighup_Exit130`, `Cancel_DeletesPartial`, `Cancel_NoChildLeft`. **Depends:** R06, R12.
+
+### R14 Setup, doctor, interactive menu, install flags
+
+- **Objective:** the P7 and P9 features are reachable and correct. **Evidence:** B12, B17, B18. Specification: D.5, D.6, D.7, E; old tasks T7.1 to T7.6, T9.1, T9.2.
+- **Files:** `src/Drawplate.Services/Setup/{AcquisitionFlow,DoctorService,InstallRunner}.cs`, `src/Drawplate.Console/{AppHost.cs,Ui/ConsolePrompt.cs}`, `Ui/MenuService` (wherever it lives), tests under `tests/Drawplate.Tests/Setup/`.
+- **Tasks:**
+  1. `AcquisitionFlow`: remove `ThrowIfNull(ffmpegPath)` (the argument is nullable by design); after a successful install call `Locate` again with `KnownFolders` and re-run `GetInfoAsync` on the new candidate; print E-FF-01 exactly from `InstallAdvisor` (no simplified text); take `TextWriter` outputs through the constructor instead of `Console`.
+  2. `DoctorService`: print real data: FFmpeg path and source (`PATH`, `DRAWPLATE_FFMPEG`, `--ffmpeg-path`, known folder), the real ffprobe result, libx264, a line per probed encoder, and the hardware note; make it `async`, no `GetAwaiter().GetResult()`; exit 0 when FFmpeg is ok, else 3 (D.6).
+  3. `AppHost`: `Setup` runs the flow (D.5); `Doctor` runs `DoctorService`; `-y` and `-n` apply to `setup` and to a conversion that finds no FFmpeg; `-m` starts `MenuService` (needs a terminal, else E-USAGE-10). Remove the E-TEMP-01 branch and, when nothing else uses it, the message.
+  4. `NoElevationTests` (old T7.6): scan `src/**/*.cs` for `sudo`, `pkexec`, `runas`, `Verb` outside `InstallAdvisor.cs` display text.
+- **Acceptance (FakeExe as winget/brew, scripted prompts):** the ten acquisition scenarios of old T7.3 pass; `doctor` lines equal D.6 for ok, missing, broken, outdated and note cases; `drawplate setup -n` prints E-FF-01 and exits 3 without prompting; with FFmpeg present `setup` prints N-SETUP-01, exit 0.
+- **Tests:** `AcquisitionFlowTests` (10 scenarios), `Acquisition_NoFfmpegPathArgument_DoesNotThrow` (regression B17), `Acquisition_AfterInstall_RelocatesInKnownFolders`, `DoctorTests` (5 cases + `Doctor_NoX264_*`), `SetupCliTests`, `MenuTests`, `NoElevationTests`. **Depends:** R07, R11, R12.
+
+### R15 Terminal behavior: theme and live progress
+
+- **Objective:** colors only on a terminal, live two-line progress, ASCII fallback (F16). Decision for this plan: **plain ANSI only** (`PlainRenderer` path; old T5.2 Spectre cards are conditional on ADR 0003 and are not part of these stages; see Q2). **Evidence:** B12 (`Theme` unused), no P5 code.
+- **Files:** `src/Drawplate.Console/Ui/{Theme,LiveProgress,RendererFactory}.cs`; `AppHost.cs`; tests `ThemeTests`, `LiveProgressTests`.
+- **Tasks:** `Theme.Detect(isTerminal, env)` (NO_COLOR, `TERM=dumb`, output encoding) feeds the glyph and color choice; `LiveProgress` redraws the two live lines of D.4 at most 10 times per second using `\r` and `\x1b[2K` only when stdout is a terminal; otherwise nothing is redrawn and per-file lines only are printed. `IRenderer.FileProgress` receives `ProgressParser` values from the runner.
+- **Acceptance:** piped output has no `0x1B` byte; a simulated terminal writer receives at most 10 redraws per second (injected `TimeProvider`).
+- **Tests:** `Theme_NoColor_Plain`, `Theme_Dumb_Ascii`, `Theme_Utf8_Glyphs`, `Live_Piped_NoRedraw`, `Live_Terminal_ThrottledTo10Hz`, `Live_UnknownFraction_ShowsDashes`. **Depends:** R12.
+
+### R16 Integration, process-level and regression tests (T2, T3)
+
+- **Objective:** prove the product with real FFmpeg and the real binary. **Evidence:** B24. Specification: C.8, I.2, I.3, old T4.1, T4.2, T4.5 to T4.8.
+- **Files:** `tests/Drawplate.Tests/Integration/{MediaFixtures,RegressionTests,RunnerIntegrationTests}.cs`, `FfmpegFactAttribute.cs`, `UnixFactAttribute.cs`, `tests/Drawplate.Tests/Cli/CliTests.cs`.
+- **Tasks:**
+  1. `[FfmpegFact]` fails when FFmpeg is missing and `CI` is set, else skips with a message. `MediaFixtures` generates clips with lavfi at test time (I.2); nothing binary is committed.
+  2. Implement all rows R-T1..R-T8, R-E1..R-E6 of I.3 with their exact names.
+  3. `CliTests` run the built `drawplate` binary: the 14 rows of Part 3 that are testable without hardware, each as `Cli_<Situation>_<Result>` using FakeExe or real FFmpeg as noted in the row.
+  4. Run the check that names the missing files and make it empty or explained: `grep -oE '`(src|tests|scripts|docs|\.github)/[A-Za-z0-9_./*-]+`' plan.md | tr -d '`' | sort -u | while read p; do [ -e "$p" ] || echo "$p"; done` (old Part 5 text). Legitimate renames (Program.cs now exists after R04; `DoctorReport` lives in `DoctorService.cs`) are listed in PROGRESS.md.
+- **Acceptance:** with FFmpeg installed, the 6-file fixture yields 5 outputs, all h264 + yuv420p + AAC with even dimensions and source mtime, exit 1, under 60 s; the second run converts nothing; CI runs T2 on 3 OS with FFmpeg installed.
+- **Tests:** the ones listed above (`Reg_*`, `Runner_Integration_*`, `Cli_*`). **Depends:** R12, R13, R14, R15.
+
+### R17 Native AOT, CI smoke, size budget
+
+- **Objective:** ship what the plan promises: a Native-AOT binary. **Evidence:** B22. Specification: C.11, old T1.7, T4.8.
+- **Files:** `src/Drawplate.Console/Drawplate.Console.csproj`, `Directory.Build.props` (only if `InvariantGlobalization` is not already true), `.github/workflows/ci.yml`, new `docs/decisions/0003-ui-library.md`.
+- **Tasks:**
+  1. Add `<PublishAot>true</PublishAot>` to the Console project; keep `OptimizationPreference`, `StripSymbols`. `dotnet publish src/Drawplate.Console -c Release -r <rid>` must print no trim or AOT warning (they are errors). Fix causes in code; do not suppress. If a warning cannot be fixed without a design change, STOP and report it.
+  2. CI publish step: `-p:Version=0.0.0-ci`; assert `out/drawplate --version` prints `drawplate 0.0.0-ci`; smoke: generate a 1 s clip with ffmpeg, convert it with the published binary, check exit 0 and the output exists; on Unix a SIGTERM smoke; record binary size per RID in the job summary.
+  3. Do old task T1.6 (spike S5) as written, using a throwaway project outside the repo, and record the measured table in `docs/decisions/0003-ui-library.md` [V]; apply its decision rule (adopt only if under 6 MB extra and zero AOT warnings). Whatever the rule says, add no package in this plan: if it says adopt, write "adopt later, owner decides" in the ADR. Also record the baseline size per RID of the shipped binary.
+- **Acceptance:** CI green on 3 OS; the Ubuntu publish log shows ILCompiler output; sizes recorded.
+- **Tests:** `T3` smoke steps above. **Depends:** R16.
+
+### R18 Installer scripts
+
+- **Objective:** `install.sh` and `install.ps1` exist, are generated, tested and CI-checked. **Evidence:** B25. Specification: section G; old tasks T8.1 to T8.6. Decision Q3: the scripts stay single files (no ten modules) until one exceeds 400 lines.
+- **Files:** `scripts/build-installers.ps1`, `scripts/dist/{install.sh,install.ps1}` (generated, committed), `scripts/tests/*` (Pester, shell tests, `serve_release.py`), `scripts/PSScriptAnalyzerSettings.psd1`, `.github/workflows/installers.yml`.
+- **Tasks:** make the generator copy each `scripts/src/<sh|ps1>/install.*` into `scripts/dist` with the generated-file header (no module list); implement G.4 tests against the local release server; implement the dist-is-current check (regenerate, `git diff --exit-code scripts/dist`); `installers.yml` per T8.6 (ShellCheck, Pester on Windows PowerShell 5.1 and PowerShell 7, PSScriptAnalyzer compatibility rules).
+- **Acceptance:** G.4 acceptance list; `installers.yml` green; README one-liners (updated in R19) point at files that exist in the tagged tree.
+- **Tests:** `scripts/tests/*`. **Depends:** R17.
+
+### R19 Documentation, release engineering, honest status
+
+- **Objective:** documents match reality; a tag produces verified artifacts. **Evidence:** B26, B27. Specification: sections H and I.6; old T10.1 to T10.7.
+- **Files:** `README.md`, `docs/{FFMPEG,HARDWARE,MIGRATION,PROVENANCE,VNEAT-BASELINE}.md`, `docs/decisions/*`, `CHANGELOG.md`, `THIRD-PARTY-NOTICES.md`, `.github/workflows/release.yml`, `.github/dependabot.yml`, `PROGRESS.md`, `tests/Drawplate.Tests/Cli/ReadmeTests.cs`.
+- **Tasks:**
+  1. README per H.1 including the 13 "Troubleshooting FFmpeg" entries of H.2 and an options table checked against `OptionTable` by `ReadmeTests`; remove the reference to "section H.5".
+  2. `VNEAT-BASELINE.md` = the verified behavior notes of the research report (sections 5.2 to 5.4 and 6); if the Project doc is unreachable, STOP and ask the owner to paste them.
+  3. ADRs the old tasks name and that are missing (0002 name, 0004 and later from the T3 spikes): each records the spike actually performed; a spike that was not performed is recorded as [U].
+  4. `release.yml` (old T10.1), `dependabot.yml`, pinned action SHAs, CHANGELOG limited to what exists.
+  5. `PROGRESS.md`: rewrite so every claim has [V]/[I]/[U] and links to the run or command; list R01 to R20 with results; no APPROVED.
+- **Acceptance:** `ReadmeTests` pass; a dry-run tag on a fork produces archives, `SHA256SUMS` and attestation; no document describes an unbuilt feature.
+- **Tests:** `ReadmeTests`, release workflow run. **Depends:** R18.
+
+### R20 Acceptance on the target machine (owner, manual)
+
+- **Objective:** confirm the hypotheses H1 to H3 and sign off. **Machine:** Ubuntu 26.04, i5-5200U, GeForce 820M, VAAPI working.
+- **Evidence:** the target machine has never been run by the auditor; every hardware statement in this plan is [I] or [U] until this stage (Part 3, hypotheses H1 to H3).
+- **Tests:** manual, by the owner; the commands below are the test.
+- **Tasks (owner runs, pastes output into `docs/HARDWARE.md`; mark each result [V]):**
+  1. `ffmpeg -version | head -1`; `vainfo | grep -i -E 'H264.*Enc'`.
+  2. `drawplate -h`, `drawplate -V`, `drawplate -l` (expected: `vaapi` and `cpu`, no `nvenc`; `qsv` only if it truly works), `drawplate doctor`.
+  3. `drawplate --verbose -q 50 <short clip>`: the printed argv must contain `-vaapi_device /dev/dri/renderD…` and `format=nv12,hwupload`; the output plays and is H.264/AAC.
+  4. `drawplate -c <clip>` (no hardware probe, no note), `drawplate -e nvenc <clip>` (E-RUN-02, exit 1), Ctrl-C during a conversion (exit 130 within 5 s, no `.partial`).
+  5. `drawplate` in a folder with 2 clips, and `drawplate --ffmpeg-path /nope -l` (E-FF-02, exit 3).
+  6. If `-vaapi_device` is rejected by FFmpeg 8 (H3), STOP: the owner approves a new stage adding the `-init_hw_device` variant.
+- **Acceptance:** every step behaves as written; results committed to `docs/HARDWARE.md`; the owner adds R20 to the "Approved stages" line under table S.
+- **Depends:** R19.
+
+# Part 5. Open questions (defaults chosen; the owner may override)
+
+| ID | Question | Default used in this plan |
+|---|---|---|
+| Q1 | `drawplate` with no arguments: convert the current folder (D.1, same as vneat) or print help? | Convert the current folder; with no videos E-RUN-01 |
+| Q2 | Adopt Spectre.Console? | Not in this plan: plain ANSI renderer (R15). R17 measures per old T1.6 and records the result in ADR 0003; the owner decides afterwards |
+| Q3 | Installer sources: ten modules or single files? | Single files until 400 lines |
+| Q4 | Keep vneat's `-low_power 1` VAAPI variant? | Yes (R05, R08), probed after the standard variant on each node |
+| Q5 | Does the owner want `docs/HARDWARE.md` results from other machines (Intel newer than Broadwell, AMD, Apple)? | Not required for sign-off; recorded as [U] |
+
+# Part 6. Final acceptance checklist (after R20)
+
+1. `drawplate -h`, `--help`, `-V` work with no FFmpeg and an empty PATH. 2. `drawplate` never prints a stack trace. 3. On the target machine: `-l` shows `vaapi` then `cpu`; conversions use VAAPI; NVENC is never required. 4. CI green on 3 OS, including T2 and T3. 5. Native-AOT publish with zero warnings. 6. README, HARDWARE.md and PROGRESS.md contain only verified claims. 7. Every R-stage listed by the owner on the "Approved stages" line under table S.
+
+---
+
+# Part 7. Original specification and task text (previous plan.md, unchanged below this line)
+
+Binding for behavior: sections D, E, G, H, I. Section F is the historical task list; the R-stages above supersede it wherever they differ. The status table that used to precede section A is replaced by table S at the top of this file.
 
 ## A. Agent operating prompt (paste this block as the first message of every agent session)
 
