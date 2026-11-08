@@ -62,3 +62,15 @@ Result: DONE under owner decision 2026-11-08 (option 2). Ubuntu and macOS green;
 [V] Owner chose option 2 (2026-11-08): Windows known failures moved to R06 (1), R07 (5), R10 (2); plan.md amended (R02 acceptance, rule for known failures)
 [V] Full Windows failure list (aggregated annotation, run 42467945460): 11 tests = the 10 above + Cli.VersionTests.UnknownOption_ExitsTwo (assigned to R07)
 [I] The earlier list of 10 was truncated by GitHub, which shows at most 10 error annotations per step
+
+### R03 Argument parser and option table
+Result: DONE. CI run 42468607517 (6588bd9): ubuntu and macos green; windows only the 11 known tests (PR #2)
+[V] `dotnet build` Models, Services, Console (Release) -> 0 Warning(s), 0 Error(s)
+[V] `dotnet format --verify-no-changes` Models, Services, Console -> exit 0
+[V] Binary, Debug: `-h`, `--help` -> usage, exit 0; `-V`, `-t -V`, `-V --bogus` -> version, exit 0; `--bogus -V`, `-z`, `-tn --bogus` -> E-USAGE-01, exit 2; `-q` -> E-USAGE-02, exit 2; `setup a.mp4` -> E-USAGE-01, exit 2
+[V] ArgParserTests (30 tests) compile against an xunit stub (/tmp, not committed); xunit itself runs only in CI
+[I] Behaviour of the 30 ArgParserTests under real xunit is confirmed only by CI
+[I] Deviation from R03 file list: AppHost.cs gained a 4-line branch so `setup`/`doctor` keep returning E-TEMP-01 (exit 2) until R14; without it they would run a conversion
+[I] Deviation: ArgParser.cs carries `[assembly: InternalsVisibleTo("Drawplate.Tests")]` (Console had none); needed for ArgParserTests
+[U] `-e` value placeholder is `n` (R04 help block shows `<n>`); owner may prefer `name`
+[V] CI run 42468607517: 4 ArgParserTests failed first (ImmutableArray reference equality in Assert.Equal); fixed by comparing arrays

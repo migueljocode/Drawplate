@@ -8,6 +8,7 @@ public sealed record RawOptions
     public string? Quality { get; set; } = "50";
     public string? MaxSize { get; set; }
     public string? InputFolder { get; set; } = ".";
+    public string? OutputFolder { get; set; }
     public ImmutableArray<string> Files { get; set; } = [];
     public bool NoTimestamps { get; set; }
     public bool Cpu { get; set; }

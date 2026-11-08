@@ -53,6 +53,12 @@ internal static class Program
             return 0;
         }
 
+        if (parsed.Kind is CommandKind.Setup or CommandKind.Doctor)
+        {
+            global::System.Console.Error.WriteLine(Messages.E_TEMP_01().Text);
+            return 2;
+        }
+
         if (parsed.Options is { } o && (o.InstallDeps || o.Interactive || o.NoInstall))
         {
             global::System.Console.Error.WriteLine(Messages.E_TEMP_01().Text);

@@ -19,8 +19,8 @@ internal sealed record ParsedCommand
     public static ParsedCommand Setup(RawOptions options) =>
         new() { Kind = CommandKind.Setup, Options = options, Files = [], Error = null };
 
-    public static ParsedCommand Doctor() =>
-        new() { Kind = CommandKind.Doctor, Options = null, Files = [], Error = null };
+    public static ParsedCommand Doctor(RawOptions options) =>
+        new() { Kind = CommandKind.Doctor, Options = options, Files = [], Error = null };
 
     public static ParsedCommand Help() =>
         new() { Kind = CommandKind.Help, Options = null, Files = [], Error = null };

@@ -1,11 +1,15 @@
 using System;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Runtime.CompilerServices;
 
 using Drawplate.Models.Cli;
 
+[assembly: InternalsVisibleTo("Drawplate.Tests")]
+
 namespace Drawplate.Console.Cli;
 
+/// <summary>getopts-style parsing (D.1). Help and version return as soon as they are reached.</summary>
 internal static class ArgParser
 {
     internal static ParsedCommand Parse(string[] args)
@@ -13,7 +17,14 @@ internal static class ArgParser
         ArgumentNullException.ThrowIfNull(args);
         var options = new RawOptions();
         var files = ImmutableArray.CreateBuilder<string>();
+        var kind = CommandKind.Convert;
         var i = 0;
+
+        if (args.Length > 0 && args[0] is "setup" or "doctor")
+        {
+            kind = args[0] == "setup" ? CommandKind.Setup : CommandKind.Doctor;
+            i = 1;
+        }
 
         while (i < args.Length)
         {
@@ -21,115 +32,154 @@ internal static class ArgParser
 
             if (arg == "--")
             {
-                i++;
-                while (i < args.Length)
+                for (i++; i < args.Length; i++)
                 {
+                    if (kind != CommandKind.Convert)
+                    {
+                        return ParsedCommand.ErrorResult(Messages.E_USAGE_01_Long(args[i]));
+                    }
                     files.Add(args[i]);
-                    i++;
                 }
                 break;
             }
 
-            if (arg.StartsWith("--"))
+            Message? error;
+            if (arg.StartsWith("--", StringComparison.Ordinal))
             {
-                var result = ParseLong(arg, options);
-                if (result is { } msg)
+                error = ParseLong(args, ref i, options);
+            }
+            else if (arg.Length > 1 && arg[0] == '-')
+            {
+                error = ParseShort(args, ref i, options);
+            }
+            else
+            {
+                if (kind != CommandKind.Convert)
                 {
-                    return ParsedCommand.ErrorResult(msg);
+                    return ParsedCommand.ErrorResult(Messages.E_USAGE_01_Long(arg));
                 }
+                files.Add(arg);
                 i++;
                 continue;
             }
 
-            if (arg.StartsWith('-') && arg.Length > 1)
+            if (error is not null)
             {
-                var result = ParseShort(arg, options, args, ref i);
-                if (result is { } msg)
-                {
-                    return ParsedCommand.ErrorResult(msg);
-                }
-                continue;
+                return ParsedCommand.ErrorResult(error);
             }
-
-            files.Add(arg);
-            i++;
+            if (options.Help)
+            {
+                return ParsedCommand.Help();
+            }
+            if (options.Version)
+            {
+                return ParsedCommand.Version();
+            }
         }
 
-        return ParsedCommand.Convert(options, files.ToImmutable());
+        return kind switch
+        {
+            CommandKind.Setup => ParsedCommand.Setup(options),
+            CommandKind.Doctor => ParsedCommand.Doctor(options),
+            _ => ParsedCommand.Convert(options, files.ToImmutable()),
+        };
     }
 
-    private static Message? ParseLong(string arg, RawOptions options)
+    private static Message? ParseLong(string[] args, ref int index, RawOptions options)
     {
-        var name = arg[2..];
-        var value = string.Empty;
-        if (name.Contains('='))
+        var arg = args[index];
+        var body = arg[2..];
+        string? inlineValue = null;
+        var equals = body.IndexOf('=', StringComparison.Ordinal);
+        if (equals >= 0)
         {
-            var parts = name.Split('=', 2);
-            name = parts[0];
-            value = parts[1];
+            inlineValue = body[(equals + 1)..];
+            body = body[..equals];
         }
 
-        var entry = OptionTable.Entries.FirstOrDefault(e => e.LongNames.Any(l => l == $"--{name}"));
+        var name = "--" + body;
+        var entry = OptionTable.Entries.FirstOrDefault(e => e.LongNames.Contains(name));
         if (entry is null)
         {
             return Messages.E_USAGE_01_Long(arg);
         }
 
-        if (!entry.TakesValue && value.Length > 0)
+        index++;
+        if (!entry.TakesValue)
         {
-            return Messages.E_USAGE_03(name);
+            if (inlineValue is not null)
+            {
+                return Messages.E_USAGE_03(body);
+            }
+            entry.Setter(options, string.Empty);
+            return null;
         }
 
-        if (entry.TakesValue && value.Length == 0)
+        string value;
+        if (inlineValue is not null)
         {
-            return Messages.E_USAGE_02($"--{name}");
+            value = inlineValue;
+        }
+        else if (index < args.Length)
+        {
+            value = args[index];
+            index++;
+        }
+        else
+        {
+            return Messages.E_USAGE_02(name);
+        }
+
+        if (value.Length == 0)
+        {
+            return Messages.E_USAGE_02(name);
         }
 
         entry.Setter(options, value);
         return null;
     }
 
-    private static Message? ParseShort(string arg, RawOptions options, string[] allArgs, ref int index)
+    private static Message? ParseShort(string[] args, ref int index, RawOptions options)
     {
-        var chars = arg[1..];
-        var i = 0;
+        var cluster = args[index][1..];
+        index++;
 
-        while (i < chars.Length)
+        for (var k = 0; k < cluster.Length; k++)
         {
-            var c = chars[i];
-            var entry = OptionTable.Entries.FirstOrDefault(e => e.ShortName == c.ToString());
+            var letter = cluster[k];
+            var entry = OptionTable.Entries.FirstOrDefault(e => e.ShortName == letter.ToString());
             if (entry is null)
             {
-                return Messages.E_USAGE_01_Short(c);
+                return Messages.E_USAGE_01_Short(letter);
             }
 
             if (!entry.TakesValue)
             {
                 entry.Setter(options, string.Empty);
-                i++;
+                if (options.Help || options.Version)
+                {
+                    return null;
+                }
                 continue;
             }
 
-            // Takes value: either attached (-q50) or next arg (-q 50)
-            if (i + 1 < chars.Length)
+            // Value is the rest of the cluster (-q50) or the next argument (-q 50).
+            if (k + 1 < cluster.Length)
             {
-                entry.Setter(options, chars[(i + 1)..]);
-                index++;
+                entry.Setter(options, cluster[(k + 1)..]);
                 return null;
             }
 
-            // Value is next argument
-            index++;
-            if (index >= allArgs.Length)
+            if (index >= args.Length)
             {
-                return Messages.E_USAGE_02(arg);
+                return Messages.E_USAGE_02("-" + letter);
             }
-            entry.Setter(options, allArgs[index]);
+
+            entry.Setter(options, args[index]);
             index++;
             return null;
         }
 
-        index++;
         return null;
     }
 }
