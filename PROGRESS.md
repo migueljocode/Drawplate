@@ -44,8 +44,18 @@ Result: DONE (baseline recorded; plan diagnosis confirmed)
 [U] STD-TEST locally: test project needs NuGet (api.nuget.org not reachable from the sandbox); tests run in CI only
 
 ### R02 CI and test-harness hygiene
-Result: DONE pending CI (see PR)
+Result: BLOCKED. Ubuntu and macOS green; Windows Test step red (run 42467293199, PR #1)
 [V] `.gitattributes` `* text=auto eol=lf`; `git add --renormalize .` changed no content on Linux
 [V] `dotnet format <project> --verify-no-changes` (Models, Services, Console) -> exit 0
 [V] `dotnet build <project> -c Release` (Models, Services, Console) -> 0 Warning(s), 0 Error(s)
 [I] Windows ENDOFLINE and macOS stat fixes verified only by CI run (see PR)
+[V] CI run 42467293199 (ee17625): ubuntu-latest success, macos-latest success, windows-latest Test:failure
+[V] Windows failing tests (annotations via check-run API):
+    Cli.VersionTests.Version_Flag_PrintsVersionAndExitsZero (-V, --version): ComponentModel.Win32Exception, path has no .exe
+    Process.InfoServiceTests.Version_6_1_1_Ok, Version_5_1_TooOld, NotRunnable_ExitCode127, Encoders_ContainLibx264: script file started as executable
+    Process.LocatorTests.Path_Found: null
+    Unit.PlannerTests.InsideOutput_Skipped (expected SkipInsideOutput, got Convert), ExistingTarget_Skipped (expected SkipExists, got Convert)
+    Process.LauncherTests.Cancel_KillsProcessTree_Within3Seconds: exit code -1 (expected not -1)
+[I] These failures were hidden: `main` CI never reached the Test step on Windows (format step failed first)
+[I] Their causes are not in R02's file list (product path handling is R06, R07, R10); R02 cannot reach green without them
+[U] Owner decision needed: allow test-only fixes in R02, or move Windows-only test fixes into R06/R07/R10 and relax R02 acceptance
