@@ -85,3 +85,12 @@ Result: DONE. CI run 42469028423 (5f5a48f): ubuntu and macos green; windows only
 [I] Golden help.txt aligns the `-e, --encoder <n>` line to the 24-column rule. The plan's block had 6 spaces there, which breaks the rule, so the plan's text was corrected
 [I] Version prints 1.0.0 in dev builds: the SDK embeds the default Version when no Version property is set. The 0.0.0 fallback applies only when no informational version exists. CI sets a version at publish (R17)
 [I] Deviation: ExitCode became public (Models) so Console can use it; CA1031 is satisfied by an exception filter (`when ex is not OperationCanceledException`), not a suppression
+
+### R05 Encoder profiles (VAAPI, AMF, VideoToolbox, no crash)
+Result: DONE. CI run 42487838738 (5994c40): ubuntu and macos green; windows only the 11 known tests (PR #4)
+[V] `EncoderProfiles.For` replaces `Args`; the `NotSupportedException` is gone from EncoderProfiles (only PlatformNotSupportedException in SignalHandler remains)
+[V] Seven golden vectors (vaapi-q50, vaapi-lp-q50, probe-vaapi, amf-q50, probe-amf, videotoolbox-q50, probe-videotoolbox) match Models output (checked with a runner against the golden files)
+[V] Every encoder for every OS builds Probe and Convert without throwing (Probe_EveryKindOfEveryOs_DoesNotThrow logic)
+[V] dotnet build and dotnet format (Models, Services, Console) -> 0 errors, 0 warnings, exit 0
+[V] Test files compile against the xunit stub (EncoderTests, GoldenArgvTests)
+[I] Services still calls FfmpegArgv.Probe(kind) without a VaapiTarget. On Linux, Vaapi now throws ArgumentNullException (was NotSupportedException): same failure, different message. R09 wires the device through

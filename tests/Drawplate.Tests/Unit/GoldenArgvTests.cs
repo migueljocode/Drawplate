@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Linq;
 
@@ -72,5 +73,62 @@ public class GoldenArgvTests
         var args = FfmpegArgv.Convert("my video file.mov", "PARTIAL", EncoderKind.Cpu, 50, SizeCap.None);
         Assert.Contains("my video file.mov", args);
         Assert.Equal(1, args.Count(a => a == "my video file.mov"));
+    }
+
+    private static readonly VaapiTarget Vaapi = new("/dev/dri/renderD128", false);
+
+    [Fact]
+    public void Convert_Vaapi_Q50_MatchesGolden()
+    {
+        var args = FfmpegArgv.Convert("SRC", "PARTIAL", EncoderKind.Vaapi, 50, SizeCap.None, Vaapi);
+        Assert.Equal(ReadGolden("vaapi-q50.txt"), args.ToArray());
+    }
+
+    [Fact]
+    public void Convert_VaapiLowPower_Q50_MatchesGolden()
+    {
+        var args = FfmpegArgv.Convert("SRC", "PARTIAL", EncoderKind.Vaapi, 50, SizeCap.None, Vaapi with { LowPower = true });
+        Assert.Equal(ReadGolden("vaapi-lp-q50.txt"), args.ToArray());
+    }
+
+    [Fact]
+    public void Probe_Vaapi_MatchesGolden()
+    {
+        var args = FfmpegArgv.Probe(EncoderKind.Vaapi, Vaapi);
+        Assert.Equal(ReadGolden("probe-vaapi.txt"), args.ToArray());
+    }
+
+    [Fact]
+    public void Convert_VaapiHd_FilterIsCapThenEvenThenSuffix()
+    {
+        var args = FfmpegArgv.Convert("SRC", "PARTIAL", EncoderKind.Vaapi, 50, SizeCap.Hd, Vaapi).ToArray();
+        var index = Array.IndexOf(args, "-vf");
+        Assert.Equal(SizeCaps.VideoFilter(SizeCap.Hd) + ",format=nv12,hwupload", args[index + 1]);
+    }
+
+    [Fact]
+    public void Convert_Amf_Q50_MatchesGolden()
+    {
+        var args = FfmpegArgv.Convert("SRC", "PARTIAL", EncoderKind.Amf, 50, SizeCap.None);
+        Assert.Equal(ReadGolden("amf-q50.txt"), args.ToArray());
+    }
+
+    [Fact]
+    public void Probe_Amf_MatchesGolden()
+    {
+        Assert.Equal(ReadGolden("probe-amf.txt"), FfmpegArgv.Probe(EncoderKind.Amf).ToArray());
+    }
+
+    [Fact]
+    public void Convert_VideoToolbox_Q50_MatchesGolden()
+    {
+        var args = FfmpegArgv.Convert("SRC", "PARTIAL", EncoderKind.VideoToolbox, 50, SizeCap.None);
+        Assert.Equal(ReadGolden("videotoolbox-q50.txt"), args.ToArray());
+    }
+
+    [Fact]
+    public void Probe_VideoToolbox_MatchesGolden()
+    {
+        Assert.Equal(ReadGolden("probe-videotoolbox.txt"), FfmpegArgv.Probe(EncoderKind.VideoToolbox).ToArray());
     }
 }
