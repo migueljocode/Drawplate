@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 
@@ -5,8 +6,24 @@ namespace Drawplate.Tests.Process;
 
 public static class FakeExeHarness
 {
-    public static string FakeExePath =>
-        Path.Combine(GetRepoDir(), "tests", "FakeExe", "bin", "Release", "net10.0", "FakeExe.dll");
+    private static readonly string[] Configurations = ["Release", "Debug"];
+
+    public static string FakeExePath { get; } = ResolveFakeExe();
+
+    private static string ResolveFakeExe()
+    {
+        var root = Path.Combine(GetRepoDir(), "tests", "FakeExe", "bin");
+        foreach (var configuration in Configurations)
+        {
+            var candidate = Path.Combine(root, configuration, "net10.0", "FakeExe.dll");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        throw new InvalidOperationException("Build tests/FakeExe first");
+    }
 
     private static string GetRepoDir()
     {

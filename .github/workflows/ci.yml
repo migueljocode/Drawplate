@@ -49,7 +49,21 @@ jobs:
         run: choco install ffmpeg -y
 
       - name: Test
-        run: dotnet test tests/Drawplate.Tests -c Release
+        run: dotnet test tests/Drawplate.Tests -c Release --logger "trx;LogFileName=results.trx" --results-directory TestResults
+
+      - name: Report failing tests
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse -Filter *.trx -Path TestResults | ForEach-Object {
+            [xml]$report = Get-Content -LiteralPath $_.FullName -Raw
+            foreach ($result in $report.TestRun.Results.UnitTestResult) {
+              if ($result.outcome -eq 'Failed') {
+                $message = [string]$result.Output.ErrorInfo.Message -replace "\r?\n", ' '
+                Write-Output "::error title=$($result.testName)::$message"
+              }
+            }
+          }
 
       - name: Publish
         run: dotnet publish src/Drawplate.Console -c Release -r ${{ matrix.rid }} -o out
@@ -66,9 +80,9 @@ jobs:
         shell: bash
         run: |
           if [ -f "out/drawplate" ]; then
-            SIZE=$(stat -c%s out/drawplate)
+            SIZE=$(wc -c < out/drawplate)
           elif [ -f "out/drawplate.exe" ]; then
-            SIZE=$(stat -c%s out/drawplate.exe)
+            SIZE=$(wc -c < out/drawplate.exe)
           else
             SIZE=0
           fi

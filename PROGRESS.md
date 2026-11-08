@@ -33,3 +33,19 @@ Result: DONE
 
 ## Deferred
 
+
+## Repair stages (plan.md Part 4)
+
+### R01 Baseline (2026-11-08, no commit)
+Result: DONE (baseline recorded; plan diagnosis confirmed)
+[V] `dotnet build src/Drawplate.Console -c Debug` -> 0 Warning(s), 0 Error(s); SDK 10.0.114 from Ubuntu archive
+[V] `drawplate --help` / no-argument in empty folder -> `NotSupportedException: capture the golden vector first (T6.7)`, exit 134
+[V] `drawplate -h` -> `Unknown option -h.`, exit 2; `-t` same; `-V` -> `drawplate 0.0.0`, exit 0
+[U] STD-TEST locally: test project needs NuGet (api.nuget.org not reachable from the sandbox); tests run in CI only
+
+### R02 CI and test-harness hygiene
+Result: DONE pending CI (see PR)
+[V] `.gitattributes` `* text=auto eol=lf`; `git add --renormalize .` changed no content on Linux
+[V] `dotnet format <project> --verify-no-changes` (Models, Services, Console) -> exit 0
+[V] `dotnet build <project> -c Release` (Models, Services, Console) -> 0 Warning(s), 0 Error(s)
+[I] Windows ENDOFLINE and macOS stat fixes verified only by CI run (see PR)
