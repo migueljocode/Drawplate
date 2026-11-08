@@ -247,7 +247,7 @@ Observed: `./drawplate --help` and `./drawplate` die with `Unhandled exception. 
   4. `Start`: wrap `Process.Start` and catch `Win32Exception`, `InvalidOperationException`, `IOException`; throw `ProcessStartFailedException(executable, message)` (public sealed, in Services).
   5. `KillTree()`: `try { _process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { } catch (Win32Exception) { }` with a comment why (already exited). Delete `GetChildProcessIds*` (the `/proc` walker).
 - **Acceptance:** build 0 warnings; `grep -rn GetChildProcessIds src` empty; the tests below pass on Linux (and in CI on macOS and Windows).
-- **Known Windows failures (owner decision 2026-11-08):** `Process.LauncherTests.Cancel_KillsProcessTree_Within3Seconds` (exit code -1 on Windows); must pass on windows-latest after this stage.
+- **Known Windows failures (owner decision 2026-11-08):** `Process.LauncherTests.Cancel_KillsProcessTree_Within3Seconds` (exit code -1 on Windows). RESOLVED in R06: root cause was TerminateProcess exit code -1 colliding with the "running" value; a killed process now reports 137 on every platform.
 
 - **Tests (T1, FakeExe):** `Timeout_WhileStdoutOpen_KillsAndReportsTimedOut` (script `{"hang":true}`, 1 s timeout, whole call under 5 s), `Cancel_WhileDrainingStdout_KillsWithinThreeSeconds`, `Wait_AfterManyStderrLines_TailHasLastLine` (script prints 2000 stderr lines; run in a loop of 20), `Start_MissingExecutable_ThrowsProcessStartFailed`, `Start_NotExecutable_ThrowsProcessStartFailed` (Unix only, text file without exec bit). **Depends:** R02 (does not need R05; order kept for review simplicity).
 

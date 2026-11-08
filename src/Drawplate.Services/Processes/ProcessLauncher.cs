@@ -1,9 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -12,6 +11,8 @@ namespace Drawplate.Services.Processes;
 
 public sealed class ProcessLauncher : IProcessLauncher
 {
+    private static readonly TimeSpan DrainLimit = TimeSpan.FromSeconds(5);
+
     public IRunningProcess Start(string executable, IReadOnlyList<string> arguments, ProcessOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(executable);
@@ -24,6 +25,8 @@ public sealed class ProcessLauncher : IProcessLauncher
             FileName = executable,
             UseShellExecute = false,
             RedirectStandardInput = false,
+            RedirectStandardOutput = !opts.InheritConsole,
+            RedirectStandardError = !opts.InheritConsole,
         };
 
         foreach (var arg in arguments)
@@ -31,42 +34,69 @@ public sealed class ProcessLauncher : IProcessLauncher
             psi.ArgumentList.Add(arg);
         }
 
-        if (opts.InheritConsole)
+        Process? process;
+        try
         {
-            psi.RedirectStandardOutput = false;
-            psi.RedirectStandardError = false;
+            process = Process.Start(psi);
         }
-        else
+        catch (Win32Exception ex)
         {
-            psi.RedirectStandardOutput = true;
-            psi.RedirectStandardError = true;
+            throw new ProcessStartFailedException(executable, ex.Message, ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new ProcessStartFailedException(executable, ex.Message, ex);
+        }
+        catch (IOException ex)
+        {
+            throw new ProcessStartFailedException(executable, ex.Message, ex);
         }
 
-        var process = Process.Start(psi)!;
-        return new RunningProcess(process, opts);
+        return process is null
+            ? throw new ProcessStartFailedException(executable, "Process.Start returned no process.")
+            : new RunningProcess(process, opts);
     }
 
     private sealed class RunningProcess : IRunningProcess
     {
+        /// <summary>
+        /// Exit code reported for a process this launcher killed. Windows reports -1 for a terminated process,
+        /// which is also the "still running" value of <see cref="ExitCode"/>; Unix reports 137 (SIGKILL).
+        /// Using 137 everywhere keeps the two cases apart on every platform.
+        /// </summary>
+        private const int KilledExitCode = 137;
+
         private readonly Process _process;
         private readonly ProcessOptions _options;
         private readonly RingBuffer _stderr = new(65536);
         private readonly Channel<string> _stdoutChannel = Channel.CreateUnbounded<string>();
-        private Task? _stdoutReaderTask;
-        private Task? _stderrReaderTask;
-        private int _exitCode = -1;
-        private bool _timedOut;
+        private readonly Task _stdoutReaderTask;
+        private readonly Task _stderrReaderTask;
+        private readonly CancellationTokenSource? _timeoutSource;
+        private readonly CancellationTokenRegistration _timeoutRegistration;
+        private readonly CancellationTokenRegistration _cancelRegistration;
+        private volatile bool _timedOut;
+        private volatile bool _killed;
 
         public RunningProcess(Process process, ProcessOptions options)
         {
             _process = process;
             _options = options;
 
-            _stdoutReaderTask = ReadStdoutLoopAsync();
-            if (!options.InheritConsole)
+            // Timers start with the process, not with WaitAsync, so a timeout counts from launch.
+            if (options.Timeout is { } timeout)
             {
-                _stderrReaderTask = ReadStderrLoopAsync();
+                _timeoutSource = new CancellationTokenSource(timeout);
+                _timeoutRegistration = _timeoutSource.Token.Register(OnTimeout);
             }
+
+            if (options.Cancellation.CanBeCanceled)
+            {
+                _cancelRegistration = options.Cancellation.Register(KillTree);
+            }
+
+            _stdoutReaderTask = ReadStdoutLoopAsync();
+            _stderrReaderTask = options.InheritConsole ? Task.CompletedTask : ReadStderrLoopAsync();
         }
 
         public IAsyncEnumerable<string> StdoutLines => ReadStdoutLinesAsync();
@@ -75,17 +105,9 @@ public sealed class ProcessLauncher : IProcessLauncher
 
         public bool TimedOut => _timedOut;
 
-        public int ExitCode
-        {
-            get
-            {
-                if (!_process.HasExited)
-                {
-                    return -1;
-                }
-                return _process.ExitCode;
-            }
-        }
+        public int ExitCode => _process.HasExited ? ReadExitCode() : -1;
+
+        private int ReadExitCode() => _killed ? KilledExitCode : _process.ExitCode;
 
         private async IAsyncEnumerable<string> ReadStdoutLinesAsync()
         {
@@ -101,7 +123,6 @@ public sealed class ProcessLauncher : IProcessLauncher
             {
                 if (_options.InheritConsole || _process.StandardOutput is null)
                 {
-                    _stdoutChannel.Writer.Complete();
                     return;
                 }
 
@@ -148,24 +169,9 @@ public sealed class ProcessLauncher : IProcessLauncher
 
         public async Task<int> WaitAsync(CancellationToken ct)
         {
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            var waitTask = _process.WaitForExitAsync(linkedCts.Token);
-
-            if (_options.Timeout is { } timeout)
-            {
-                var delayTask = Task.Delay(timeout, linkedCts.Token);
-                var completed = await Task.WhenAny(waitTask, delayTask).ConfigureAwait(false);
-                if (completed == delayTask && delayTask.IsCompletedSuccessfully)
-                {
-                    _timedOut = true;
-                    KillTree();
-                    return -1;
-                }
-            }
-
             try
             {
-                await waitTask.ConfigureAwait(false);
+                await _process.WaitForExitAsync(ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -173,109 +179,46 @@ public sealed class ProcessLauncher : IProcessLauncher
                 throw;
             }
 
-            try
+            // A grandchild can keep a pipe open after the child exits; never wait on it forever.
+            await Task.WhenAny(Task.WhenAll(_stdoutReaderTask, _stderrReaderTask), Task.Delay(DrainLimit, CancellationToken.None)).ConfigureAwait(false);
+
+            return _timedOut ? -1 : ReadExitCode();
+        }
+
+        private void OnTimeout()
+        {
+            if (_process.HasExited)
             {
-                await _stdoutReaderTask!.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            catch (ObjectDisposedException)
-            {
+                return;
             }
 
-            _exitCode = _process.ExitCode;
-            return _exitCode;
+            _timedOut = true;
+            KillTree();
         }
 
         private void KillTree()
         {
-            var childPids = GetChildProcessIds(_process.Id);
-
             try
             {
-                foreach (var pid in childPids)
-                {
-                    try
-                    {
-                        Process.GetProcessById(pid).Kill();
-                    }
-                    catch (InvalidOperationException)
-                    {
-                    }
-                    catch (System.ComponentModel.Win32Exception)
-                    {
-                    }
-                }
-            }
-            catch (IOException)
-            {
-            }
-            catch (UnauthorizedAccessException)
-            {
-            }
-
-            try
-            {
-                _process.Kill();
+                _process.Kill(entireProcessTree: true);
+                _killed = true;
             }
             catch (InvalidOperationException)
             {
+                // The process already exited, so there is nothing left to kill.
             }
-            catch (System.ComponentModel.Win32Exception)
+            catch (Win32Exception)
             {
-            }
-        }
-
-        private static List<int> GetChildProcessIds(int parentPid)
-        {
-            var result = new List<int>();
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-            {
-                GetChildProcessIdsLinux(parentPid, result);
-            }
-            return result;
-        }
-
-        private static void GetChildProcessIdsLinux(int parentPid, List<int> result)
-        {
-            try
-            {
-                foreach (var pidDir in Directory.GetDirectories("/proc"))
-                {
-                    if (!int.TryParse(Path.GetFileName(pidDir), out var pid))
-                    {
-                        continue;
-                    }
-
-                    try
-                    {
-                        var stat = File.ReadAllText(Path.Combine(pidDir, "stat"));
-                        var parts = stat.Split(' ');
-                        if (parts.Length >= 4 && int.TryParse(parts[3], out var ppid) && ppid == parentPid)
-                        {
-                            result.Add(pid);
-                            GetChildProcessIdsLinux(pid, result);
-                        }
-                    }
-                    catch (IOException)
-                    {
-                    }
-                    catch (UnauthorizedAccessException)
-                    {
-                    }
-                }
-            }
-            catch (IOException)
-            {
-            }
-            catch (UnauthorizedAccessException)
-            {
+                // The OS refused the signal because the process already exited.
             }
         }
 
         public ValueTask DisposeAsync()
         {
+            _timeoutRegistration.Dispose();
+            _cancelRegistration.Dispose();
+            _timeoutSource?.Dispose();
+
             try
             {
                 if (!_process.HasExited)
@@ -286,7 +229,7 @@ public sealed class ProcessLauncher : IProcessLauncher
             catch (InvalidOperationException)
             {
             }
-            catch (System.ComponentModel.Win32Exception)
+            catch (Win32Exception)
             {
             }
 

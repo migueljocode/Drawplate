@@ -94,3 +94,14 @@ Result: DONE. CI run 42487838738 (5994c40): ubuntu and macos green; windows only
 [V] dotnet build and dotnet format (Models, Services, Console) -> 0 errors, 0 warnings, exit 0
 [V] Test files compile against the xunit stub (EncoderTests, GoldenArgvTests)
 [I] Services still calls FfmpegArgv.Probe(kind) without a VaapiTarget. On Linux, Vaapi now throws ArgumentNullException (was NotSupportedException): same failure, different message. R09 wires the device through
+
+### R06 Process launcher hardening
+Result: DONE. CI run 42493800078 (b004d10): ubuntu and macos green; windows fails only on 10 known tests (R07: 6, R10: 2... see plan); Cancel_KillsProcessTree_Within3Seconds now passes on Windows (PR #5)
+[V] `grep -rn GetChildProcessIds src --include=*.cs` -> no matches (the /proc walker is deleted)
+[V] Services build Release 0 warnings/0 errors; dotnet format exit 0
+[V] Five launcher scenarios run against FakeExe with a runner: timeout 1031 ms, TimedOut=true, exit -1; cancel while draining throws TaskCanceledException, process killed (137), stdout drained; 2000 stderr lines x 20 rounds: tail has the last line 20/20; missing exe and non-executable file throw ProcessStartFailedException
+[V] ROOT CAUSE of the Windows cancel failures (diagnostic run 42493309987, PR #6, closed): on windows-latest `Process.Kill(entireProcessTree: true)` works (runningBefore=True, HasExited=True) but ExitCode is -1, because TerminateProcess is called with -1. The launcher used -1 for "still running", so a killed process looked alive
+[V] Earlier guesses (parent-kill fallback, bounded wait after kill) were wrong and are removed; KillTree is the plan's simple form
+[I] Decision: a process killed by the launcher reports ExitCode 137 on every platform (Unix SIGKILL value); WaitAsync returns -1 only for a timeout (plan contract). Known test Cancel_KillsProcessTree_Within3Seconds is unchanged
+[I] New test Cancel_KilledProcess_ReportsExitCode137OnEveryPlatform pins this
+[I] Windows: Start_NotExecutable test returns early (the execute bit is a Unix concept)
