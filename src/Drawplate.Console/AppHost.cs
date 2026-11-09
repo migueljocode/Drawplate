@@ -194,7 +194,8 @@ internal static class AppHost
             totalInputSize,
             !options.NoTimestamps);
 
-        var runner = new ConversionRunner(candidate.Path, new ProcessLauncher(), new MediaProbe(new ProcessLauncher()));
+        var ffprobe = FfprobeLocator.Find(candidate.Path, PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")), File.Exists, os);
+        var runner = new ConversionRunner(candidate.Path, new ProcessLauncher(), new MediaProbe(new ProcessLauncher(), candidate.Path, ffprobe));
         int converted = 0, failed = 0;
         var fileArray = plan.Files.ToArray();
         for (int fileIdx = 0; fileIdx < fileArray.Length; fileIdx++)

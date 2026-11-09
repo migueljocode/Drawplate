@@ -1,0 +1,6 @@
+Input #0, mp3, from 'song.mp3':
+  Metadata:
+    encoder         : Lavf60.3.100
+  Duration: 00:03:05.04, start: 0.025057, bitrate: 192 kb/s
+  Stream #0:0: Audio: mp3, 44100 Hz, stereo, fltp, 192 kb/s
+At least one output file must be specified

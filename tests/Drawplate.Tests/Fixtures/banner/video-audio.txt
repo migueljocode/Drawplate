@@ -1,0 +1,8 @@
+Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'clip.mp4':
+  Metadata:
+    major_brand     : isom
+    encoder         : Lavf60.3.100
+  Duration: 00:00:12.50, start: 0.000000, bitrate: 1024 kb/s
+  Stream #0:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(tv, bt709), 1920x1080, 900 kb/s, 25 fps, 25 tbr, 12800 tbn (default)
+  Stream #0:1[0x2](und): Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 128 kb/s (default)
+At least one output file must be specified

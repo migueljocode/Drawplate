@@ -137,3 +137,14 @@ Result: DONE. CI run 42563521517 (bd47b24): ubuntu and macos green; windows fail
 [I] FailureClassifier is unchanged (plan: only if a fixture needs it). The three captures classify as Unknown; the tests require Passed=false and no exception only. B28 stays open for N-GPU-02 classification
 [I] Probe log format: `probe <id>: <argv>` per run and `probe <id> failed: <stderr tail>` per failure; the Console passes no logger yet (R11 wires --verbose)
 [V] CI first failed to build (run 42563189431): CA1822 on the private nested Rig.Probe; fixed by a static helper. Lesson: CA1822 is enforced for members of private nested types, so my local filter must not hide it there
+
+### R09 Media probing without ffprobe
+Result: DONE. CI run 42617881950 (d02f754): ubuntu and macos green; windows fails only on the 2 PlannerTests assigned to R10 (PR #9). First CI run found a Windows-only path bug in my sibling test (GetDirectoryName turns / into \), fixed by building paths with Path.Combine
+[V] Services and Console build Release 0 warnings/0 errors; dotnet format exit 0
+[V] MediaProbeTests (7 tests) compile against the xunit stub
+[V] Behavior runner (7 checks, FakeExe): banner video+audio -> 12.5 s, hasVideo true; audio-only -> hasVideo false; Duration N/A -> null; ffprobe present wins over the banner (7.25 instead of 12.5); ffprobe that cannot start falls back to the banner; FfprobeLocator sibling and none
+[V] Real FFmpeg, no ffprobe installed: a 3 s video+audio clip -> 00:00:03, hasVideo=True; a 2 s audio-only m4a -> 00:00:02, hasVideo=False
+[I] Deviation: AppHost.cs was changed (one line) to construct MediaProbe(launcher, ffmpegPath, ffprobe) and find ffprobe; the plan said this belongs to R10, but the new constructor signature requires it to compile
+[I] Deviation: FfprobeLocator added as a separate file (the plan lists it); unit tests cover sibling and none
+[I] Fixtures: tests/Drawplate.Tests/Fixtures/banner/{video-audio,audio-only,duration-na}.txt are FFmpeg banner-shaped text written for this stage (the plan named the test but not the fixture files)
+[I] ffprobe is invoked with the same argv as before (the plan's queries); a non-zero exit from ffprobe falls back to the banner
