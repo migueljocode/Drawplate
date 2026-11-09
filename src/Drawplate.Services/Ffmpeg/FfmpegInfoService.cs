@@ -1,5 +1,6 @@
 using System;
-using System.Collections.Immutable;
+using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -10,80 +11,111 @@ namespace Drawplate.Services.Ffmpeg;
 
 public sealed class FfmpegInfoService
 {
-    private readonly IProcessLauncher _launcher;
+    private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(10);
+    private static readonly Version MinimumVersion = new(6, 0);
 
-    public FfmpegInfoService(IProcessLauncher launcher)
+    private readonly IProcessLauncher _launcher;
+    private readonly Func<string, bool> _fileExists;
+
+    public FfmpegInfoService(IProcessLauncher launcher, Func<string, bool>? fileExists = null)
     {
         ArgumentNullException.ThrowIfNull(launcher);
         _launcher = launcher;
+        _fileExists = fileExists ?? File.Exists;
     }
 
-    public async Task<FfmpegInfo?> GetInfoAsync(
-        string ffmpegPath,
-        CancellationToken ct)
+    /// <summary>Runs <c>-version</c> and <c>-encoders</c>. Cancellation by the caller propagates; every other failure becomes a reason.</summary>
+    public async Task<FfmpegInfoResult> GetInfoAsync(string ffmpegPath, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ffmpegPath);
 
+        if (!_fileExists(ffmpegPath))
+        {
+            return FfmpegInfoResult.Broken("file not found");
+        }
+
+        var (versionOutput, versionFailure) = await RunAsync(ffmpegPath, "-version", ct).ConfigureAwait(false);
+        if (versionFailure is not null)
+        {
+            return FfmpegInfoResult.Broken(versionFailure);
+        }
+
+        var version = ParseVersion(versionOutput);
+        if (version is null)
+        {
+            return FfmpegInfoResult.Broken("unreadable version output");
+        }
+
+        if (version.Version < MinimumVersion && !version.IsMaster)
+        {
+            return FfmpegInfoResult.Old(version.Version);
+        }
+
+        var (encodersOutput, encodersFailure) = await RunAsync(ffmpegPath, "-encoders", ct).ConfigureAwait(false);
+        if (encodersFailure is not null)
+        {
+            return FfmpegInfoResult.Broken(encodersFailure);
+        }
+
+        var encoders = FfmpegBannerParser.ParseEncoders(encodersOutput);
+        return FfmpegInfoResult.Ok(new FfmpegInfo(ffmpegPath, version, encoders, encoders.Contains("libx264")));
+    }
+
+    /// <summary>The banner parser returns version 0.0 when it finds no version, and its Version constructor can throw on odd text.</summary>
+    private static FfmpegVersion? ParseVersion(string output)
+    {
         try
         {
-            return await RunVersionAsync(ffmpegPath, ct).ConfigureAwait(true);
+            var version = FfmpegBannerParser.ParseVersion(output);
+            return version.Version == new Version(0, 0) && !version.IsMaster ? null : version;
         }
-        catch (OperationCanceledException)
+        catch (ArgumentException)
+        {
+            return null;
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+        catch (OverflowException)
         {
             return null;
         }
     }
 
-    private async Task<FfmpegInfo?> RunVersionAsync(string ffmpegPath, CancellationToken ct)
+    private async Task<(string Output, string? Failure)> RunAsync(string ffmpegPath, string argument, CancellationToken ct)
     {
-        var process = _launcher.Start(ffmpegPath, ["-version"], new ProcessOptions(Timeout: TimeSpan.FromSeconds(10)));
+        IRunningProcess process;
         try
         {
-            var versionOutput = "";
-            await foreach (var line in process.StdoutLines.ConfigureAwait(false))
-            {
-                versionOutput += line + "\n";
-            }
-
-            var exitCode = await process.WaitAsync(ct).ConfigureAwait(true);
-            if (exitCode != 0)
-            {
-                return null;
-            }
-
-            var version = FfmpegBannerParser.ParseVersion(versionOutput);
-            if (version.Version < new Version(6, 0) && !version.IsMaster)
-            {
-                return null;
-            }
-
-            var encodersOutput = await RunEncodersAsync(ffmpegPath, ct).ConfigureAwait(true);
-            var encoders = FfmpegBannerParser.ParseEncoders(encodersOutput);
-
-            return new FfmpegInfo(
-                ffmpegPath,
-                version,
-                encoders,
-                encoders.Contains("libx264"));
+            process = _launcher.Start(ffmpegPath, [argument], new ProcessOptions(CommandTimeout, Cancellation: ct));
         }
-        finally
+        catch (ProcessStartFailedException)
         {
-            await process.DisposeAsync().ConfigureAwait(false);
+            return (string.Empty, "cannot be started");
         }
-    }
 
-    private async Task<string> RunEncodersAsync(string ffmpegPath, CancellationToken ct)
-    {
-        var process = _launcher.Start(ffmpegPath, ["-encoders"], new ProcessOptions(Timeout: TimeSpan.FromSeconds(10)));
         try
         {
-            var output = "";
+            var lines = new List<string>();
             await foreach (var line in process.StdoutLines.ConfigureAwait(false))
             {
-                output += line + "\n";
+                lines.Add(line);
             }
-            await process.WaitAsync(ct).ConfigureAwait(true);
-            return output;
+
+            var exitCode = await process.WaitAsync(ct).ConfigureAwait(false);
+
+            // A cancelled run kills FFmpeg, so WaitAsync can return normally with the kill's exit code.
+            ct.ThrowIfCancellationRequested();
+
+            if (process.TimedOut)
+            {
+                return (string.Empty, "timed out");
+            }
+
+            return exitCode == 0
+                ? (string.Join('\n', lines), null)
+                : (string.Empty, $"exit code {exitCode}");
         }
         finally
         {

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -8,65 +9,60 @@ using Drawplate.Models.Setup;
 
 namespace Drawplate.Services.Platform;
 
+/// <summary>Finds the operating system and the package managers. It starts no process (R07).</summary>
 public sealed class PlatformDetector
 {
-    public static PlatformInfo Detect()
-    {
-        var os = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+    private static readonly string[] ToolNames = ["winget", "scoop", "choco", "brew", "apt-get", "dnf", "pacman", "zypper"];
+    private static readonly string[] WindowsExtensions = [".exe", ".cmd", ".bat"];
+
+    public static OperatingSystemKind DetectOs() =>
+        RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
             ? OperatingSystemKind.Windows
             : RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
                 ? OperatingSystemKind.Linux
                 : OperatingSystemKind.MacOS;
 
-        var arch = RuntimeInformation.ProcessArchitecture.ToString();
-        var tools = DetectTools();
-        var (linuxId, linuxIdLike, fedoraRelease) = DetectLinuxInfo();
+    public static PlatformInfo Detect() =>
+        Detect(PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")), File.Exists);
 
-        return new PlatformInfo(os, arch, tools, linuxId, linuxIdLike, fedoraRelease);
-    }
-
-    private static ImmutableHashSet<string> DetectTools()
+    /// <summary>A package manager counts as present when its executable is in a PATH folder.</summary>
+    public static PlatformInfo Detect(IEnumerable<string> pathFolders, Func<string, bool> fileExists, OperatingSystemKind? os = null)
     {
+        ArgumentNullException.ThrowIfNull(pathFolders);
+        ArgumentNullException.ThrowIfNull(fileExists);
+
+        var kind = os ?? DetectOs();
+        var folders = ImmutableArray.CreateRange(pathFolders);
         var tools = ImmutableHashSet.Create<string>(StringComparer.OrdinalIgnoreCase);
-        var toolNames = new[] { "winget", "scoop", "choco", "brew", "apt-get", "dnf", "pacman", "zypper" };
-        foreach (var tool in toolNames)
+        foreach (var tool in ToolNames)
         {
-            if (ToolExists(tool))
+            if (ToolExists(tool, folders, fileExists, kind))
             {
                 tools = tools.Add(tool);
             }
         }
-        return tools;
+
+        var (linuxId, linuxIdLike, fedoraRelease) = DetectLinuxInfo();
+        return new PlatformInfo(kind, RuntimeInformation.ProcessArchitecture.ToString(), tools, linuxId, linuxIdLike, fedoraRelease);
     }
 
-    private static bool ToolExists(string tool)
+    private static bool ToolExists(string tool, ImmutableArray<string> folders, Func<string, bool> fileExists, OperatingSystemKind os)
     {
-        try
+        var names = os == OperatingSystemKind.Windows
+            ? [tool, .. Array.ConvertAll(WindowsExtensions, extension => tool + extension)]
+            : new[] { tool };
+
+        foreach (var folder in folders)
         {
-            using var proc = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            foreach (var name in names)
             {
-                FileName = tool,
-                Arguments = "--version",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            });
-            if (proc is null)
-            {
-                return false;
+                if (fileExists(Path.Combine(folder, name)))
+                {
+                    return true;
+                }
             }
-            proc.WaitForExit(2000);
-            return proc.ExitCode == 0;
         }
-        catch (InvalidOperationException)
-        {
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-        }
-        catch (IOException)
-        {
-        }
+
         return false;
     }
 

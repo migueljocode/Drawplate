@@ -1,5 +1,7 @@
-using System.Runtime.InteropServices;
+using System;
+using System.IO;
 
+using Drawplate.Models.Encoding;
 using Drawplate.Services.Ffmpeg;
 
 using Xunit;
@@ -8,6 +10,8 @@ namespace Drawplate.Tests.Process;
 
 public class LocatorTests
 {
+    private static readonly string Exe = OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg";
+
     [Fact]
     public void Argument_Wins_OverEnvironment_OverPath()
     {
@@ -15,7 +19,7 @@ public class LocatorTests
             ffmpegPath: "/custom/ffmpeg",
             envVar: "/env/ffmpeg",
             pathFolders: ["/usr/bin"],
-            fileExists: p => p == "/custom/ffmpeg" || p == "/env/ffmpeg" || p == "/usr/bin/ffmpeg",
+            fileExists: _ => true,
             directoryEnumerator: _ => [],
             knownFolders: []);
         Assert.NotNull(candidate);
@@ -30,39 +34,87 @@ public class LocatorTests
             ffmpegPath: null,
             envVar: "/bad/ffmpeg",
             pathFolders: ["/usr/bin"],
-            fileExists: p => p == "/usr/bin/ffmpeg",
+            fileExists: p => p == Path.Combine("/usr/bin", Exe),
+            directoryEnumerator: _ => [],
+            knownFolders: []);
+        Assert.NotNull(candidate);
+        Assert.Equal("/bad/ffmpeg", candidate!.Path);
+        Assert.Equal(FfmpegSource.Environment, candidate.Source);
+    }
+
+    [Fact]
+    public void Locator_ArgumentMissing_ReturnsCandidate()
+    {
+        var candidate = FfmpegLocator.Locate(
+            ffmpegPath: "/nope/ffmpeg",
+            envVar: null,
+            pathFolders: ["/usr/bin"],
+            fileExists: _ => false,
+            directoryEnumerator: _ => [],
+            knownFolders: []);
+        Assert.NotNull(candidate);
+        Assert.Equal("/nope/ffmpeg", candidate!.Path);
+        Assert.Equal(FfmpegSource.Argument, candidate.Source);
+    }
+
+    [Fact]
+    public void Path_Found()
+    {
+        var expected = Path.Combine("/usr/bin", Exe);
+        var candidate = FfmpegLocator.Locate(
+            ffmpegPath: null,
+            envVar: null,
+            pathFolders: ["/usr/bin", "/opt/bin"],
+            fileExists: p => p == expected,
+            directoryEnumerator: _ => [],
+            knownFolders: []);
+        Assert.NotNull(candidate);
+        Assert.Equal(expected, candidate!.Path);
+        Assert.Equal(FfmpegSource.Path, candidate.Source);
+    }
+
+    [Fact]
+    public void Locator_EmptyPathEntry_NotResolvedAgainstCwd()
+    {
+        var candidate = FfmpegLocator.Locate(
+            ffmpegPath: null,
+            envVar: null,
+            pathFolders: [string.Empty],
+            fileExists: p => p == Exe,
             directoryEnumerator: _ => [],
             knownFolders: []);
         Assert.Null(candidate);
     }
 
     [Fact]
-    public void Path_Found()
+    public void Locator_RelativePathEntry_Ignored()
     {
         var candidate = FfmpegLocator.Locate(
             ffmpegPath: null,
             envVar: null,
-            pathFolders: ["/usr/bin", "/opt/bin"],
-            fileExists: p => p == "/usr/bin/ffmpeg",
+            pathFolders: ["bin"],
+            fileExists: p => p == Path.Combine("bin", Exe),
             directoryEnumerator: _ => [],
             knownFolders: []);
-        Assert.NotNull(candidate);
-        Assert.Equal("/usr/bin/ffmpeg", candidate!.Path);
-        Assert.Equal(FfmpegSource.Path, candidate.Source);
+        Assert.Null(candidate);
     }
 
-    [Fact(Skip = "Windows-only known folder test")]
+    [Fact]
     public void KnownFolder_WinGetLinks_FoundWhenNotOnPath()
     {
+        var links = Path.Combine("C:", "Users", "me", "AppData", "Local", "Microsoft", "WinGet", "Links");
+        var expected = Path.Combine(links, "ffmpeg.exe");
         var candidate = FfmpegLocator.Locate(
             ffmpegPath: null,
             envVar: null,
             pathFolders: [],
-            fileExists: p => p == "C:\\\\Users\\\\me\\\\AppData\\\\Local\\\\Microsoft\\\\WinGet\\\\Links\\\\ffmpeg.exe",
+            fileExists: p => p == expected,
             directoryEnumerator: _ => [],
-            knownFolders: ["C:\\\\Users\\\\me\\\\AppData\\\\Local\\\\Microsoft\\\\WinGet\\\\Links"]);
+            knownFolders: [links],
+            os: OperatingSystemKind.Windows);
         Assert.NotNull(candidate);
-        Assert.Equal(FfmpegSource.KnownFolder, candidate!.Source);
+        Assert.Equal(expected, candidate!.Path);
+        Assert.Equal(FfmpegSource.KnownFolder, candidate.Source);
     }
 
     [Fact]
@@ -78,22 +130,30 @@ public class LocatorTests
         Assert.Null(candidate);
     }
 
-    [Fact(Skip = "Windows-only glob test")]
+    [Fact]
     public void Windows_Glob_FindsGyanFfmpeg()
     {
+        var packages = Path.Combine("C:", "Users", "me", "AppData", "Local", "Microsoft", "WinGet", "Packages");
+        var gyan = Path.Combine(packages, "Gyan.FFmpeg_9.0.2");
+        var build = Path.Combine(gyan, "ffmpeg-9.0.2-full_build");
+        var expected = Path.Combine(build, "bin", "ffmpeg.exe");
         var candidate = FfmpegLocator.Locate(
             ffmpegPath: null,
             envVar: null,
             pathFolders: [],
-            fileExists: p => p == "C:\\\\Gyan.FFmpeg_9.0.2\\\\ffmpeg-9.0.2\\\\bin\\\\ffmpeg.exe",
-            directoryEnumerator: folder =>
-            {
-                if (folder == "C:\\\\Users\\\\me\\\\AppData\\\\Local\\\\Microsoft\\\\WinGet\\\\Packages")
-                    return ["C:\\\\Gyan.FFmpeg_9.0.2\\\\ffmpeg-9.0.2\\\\bin"];
-                return [];
-            },
-            knownFolders: ["C:\\\\Users\\\\me\\\\AppData\\\\Local\\\\Microsoft\\\\WinGet\\\\Packages"]);
+            fileExists: p => p == expected,
+            directoryEnumerator: folder => folder == packages ? [gyan] : folder == gyan ? [build] : [],
+            knownFolders: [packages],
+            os: OperatingSystemKind.Windows);
         Assert.NotNull(candidate);
-        Assert.Equal("C:\\\\Gyan.FFmpeg_9.0.2\\\\ffmpeg-9.0.2\\\\bin\\\\ffmpeg.exe", candidate!.Path);
+        Assert.Equal(expected, candidate!.Path);
+        Assert.Equal(FfmpegSource.KnownFolder, candidate.Source);
+    }
+
+    [Fact]
+    public void EnumerateDirectories_MissingFolder_ReturnsEmpty()
+    {
+        var missing = Path.Combine(Path.GetTempPath(), "no-such-folder-" + Guid.NewGuid().ToString("N"));
+        Assert.Empty(FfmpegLocator.EnumerateDirectories(missing));
     }
 }

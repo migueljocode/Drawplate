@@ -5,6 +5,7 @@ using System.Threading;
 
 using Drawplate.Models.Setup;
 using Drawplate.Services.Ffmpeg;
+using Drawplate.Services.Platform;
 
 namespace Drawplate.Services.Setup;
 
@@ -28,17 +29,15 @@ public sealed class DoctorService
 
     public DoctorReport Run(string? ffmpegPath)
     {
-        var pathVar = Environment.GetEnvironmentVariable("DRAWPLATE_FFMPEG");
-        var pathFolders = Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator) ?? [];
-        var knownFolders = new[] { "/opt/homebrew/bin", "/usr/local/bin", "/home/linuxbrew/.linuxbrew/bin", "/usr/bin" };
-
+        var os = PlatformDetector.DetectOs();
         var candidate = FfmpegLocator.Locate(
             ffmpegPath,
-            pathVar,
-            pathFolders,
+            Environment.GetEnvironmentVariable("DRAWPLATE_FFMPEG"),
+            PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")),
             File.Exists,
-            Directory.GetDirectories,
-            knownFolders);
+            FfmpegLocator.EnumerateDirectories,
+            KnownFolders.For(os, Environment.GetEnvironmentVariable),
+            os);
 
         var lines = ImmutableArray.CreateBuilder<DoctorLine>();
 
@@ -48,10 +47,11 @@ public sealed class DoctorService
             return new DoctorReport { Lines = lines.ToImmutable(), ExitCode = 3 };
         }
 
-        var info = _infoService.GetInfoAsync(candidate.Path, CancellationToken.None).GetAwaiter().GetResult();
-        if (info is null)
+        var result = _infoService.GetInfoAsync(candidate.Path, CancellationToken.None).GetAwaiter().GetResult();
+        if (result.Info is not { } info)
         {
-            lines.Add(new DoctorLine("broken", "FFmpeg", candidate.Path));
+            var reason = result.NotRunnable?.Reason ?? result.TooOld?.Reason ?? "unknown";
+            lines.Add(new DoctorLine("broken", "FFmpeg", $"{candidate.Path} ({reason})"));
             return new DoctorReport { Lines = lines.ToImmutable(), ExitCode = 3 };
         }
 

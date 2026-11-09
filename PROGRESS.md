@@ -105,3 +105,21 @@ Result: DONE. CI run 42493800078 (b004d10): ubuntu and macos green; windows fail
 [I] Decision: a process killed by the launcher reports ExitCode 137 on every platform (Unix SIGKILL value); WaitAsync returns -1 only for a timeout (plan contract). Known test Cancel_KillsProcessTree_Within3Seconds is unchanged
 [I] New test Cancel_KilledProcess_ReportsExitCode137OnEveryPlatform pins this
 [I] Windows: Start_NotExecutable test returns early (the execute bit is a Unix concept)
+
+### R07 Locator, FFmpeg info result, platform detection
+Result: DONE. CI run 42562529548 (3591bee): ubuntu and macos green; windows fails only on the 2 PlannerTests assigned to R10; all 8 R07 Windows failures now pass (PR #7)
+[V] Services/Models/Console build Release 0 warnings/0 errors; dotnet format exit 0 (Models, Services, Console)
+[V] `grep -rEn "Process\.Start\(|new ProcessStartInfo" src` outside Processes/ProcessLauncher.cs -> 0 matches (PlatformDetector no longer spawns `bash -lc`)
+[V] Behavior runner (23 checks, FakeExe wrappers): info 6.1.1 ok; 5.1 -> TooOld; master N-... not too old; exit 127 -> "exit code 127"; unreadable output; missing file -> "file not found"; non-executable -> "cannot be started"; user cancel propagates; locator argument/env authoritative; empty and relative PATH entries ignored; WinGet Links and Gyan glob (os: Windows); KnownFolders Linux order and Windows; PathFolders; platform detection with Windows extensions
+[V] Binary: `--ffmpeg-path /nope/ffmpeg -l` and `DRAWPLATE_FFMPEG=/bad/ffmpeg -l` -> `E-FF-02 ... (file not found)`, exit 3; `--ffmpeg-path /bin/true -l` -> E-FF-02 `(unreadable version output)`, exit 3; `-h` with empty PATH exit 0
+[V] Real FFmpeg 6.1.1 at /usr/bin/ffmpeg is found through Linux known folders with PATH=/nonexistent and passes the info step
+[V] New/changed tests compile against the xunit stub (LocatorTests, InfoServiceTests, PlatformTests, ArchitectureTests, VersionTests)
+[V] Runner found a bug that is now fixed and pinned by InfoService_UserCancel_Propagates: after a user cancel the launcher kills FFmpeg and WaitAsync returned normally, so the service reported "exit code 137" instead of propagating the cancellation (fixed with ct.ThrowIfCancellationRequested after the wait)
+[I] Plan said `FfmpegInfoResult` already existed; only FfmpegNotRunnable and FfmpegTooOld did, so it was added
+[I] Deviation: E_FF_07 did not exist in Messages; added with my own wording ("FFmpeg {version} at {path} is too old; Drawplate needs 6.0 or newer." / hint "Update FFmpeg, or choose a newer one with --ffmpeg-path."), exit 3
+[I] Deviation: PATH parsing is in new Platform/PathFolders.cs (not in FfmpegLocator); Locate got an optional `os` parameter so the Windows glob is tested on every OS; the two skipped Windows locator tests are now real tests
+[I] Deviation: FfmpegLocator.EnumerateDirectories added because Directory.GetDirectories throws when WinGet is not installed
+[I] Windows fixes in tests: InfoServiceTests uses a .cmd wrapper on Windows (was a #!/bin/sh script + chmod); VersionTests uses drawplate.exe on Windows; LocatorTests.Path_Found builds paths with Path.Combine. Target: the 8 known Windows failures assigned to R07 (VersionTests x3 [-V, --version, UnknownOption], Path_Found, InfoServiceTests x4)
+[I] The earlier note "R07 (6)" was a miscount: R07 has 8, R06 had 1 (resolved), R10 has 2
+[I] Known interim state from R05: on a machine with FFmpeg, normal runs reach EncoderProbe, which still calls FfmpegArgv.Probe(kind) without a VaapiTarget; Linux then reports "Unexpected error: Value cannot be null (Parameter 'vaapi')" (exit 1). R09 wires the VAAPI device
+[I] InfoServiceTests.Timeout_IsNotRunnable stays skipped: it would take the full 10 s timeout; the launcher timeout is covered by LauncherTests

@@ -9,6 +9,7 @@ using Drawplate.Models.Encoding;
 using Drawplate.Models.Setup;
 using Drawplate.Services.Ffmpeg;
 using Drawplate.Services.Interaction;
+using Drawplate.Services.Platform;
 using Drawplate.Services.Processes;
 
 namespace Drawplate.Services.Setup;
@@ -59,18 +60,14 @@ public sealed class AcquisitionFlow
         ArgumentNullException.ThrowIfNull(ffmpegPath);
 
         var pathVar = Environment.GetEnvironmentVariable("DRAWPLATE_FFMPEG");
-        var pathFolders = Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator) ?? [];
-        var knownFolders = _platform.Os == OperatingSystemKind.Linux
-            ? new[] { "/opt/homebrew/bin", "/usr/local/bin", "/home/linuxbrew/.linuxbrew/bin", "/usr/bin" }
-            : Array.Empty<string>();
-
         var candidate = FfmpegLocator.Locate(
             ffmpegPath,
             pathVar,
-            pathFolders,
+            PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")),
             File.Exists,
-            Directory.GetDirectories,
-            knownFolders);
+            FfmpegLocator.EnumerateDirectories,
+            KnownFolders.For(_platform.Os, Environment.GetEnvironmentVariable),
+            _platform.Os);
 
         // Step 1: -n / never install
         if (neverInstall || mode == AcquisitionMode.SetupCommand && candidate is null)
@@ -87,7 +84,7 @@ public sealed class AcquisitionFlow
         if (candidate is not null)
         {
             var info = await _infoService.GetInfoAsync(candidate.Path, ct).ConfigureAwait(false);
-            if (info is not null)
+            if (info.Info is not null)
             {
                 if (mode == AcquisitionMode.SetupCommand)
                 {
@@ -123,7 +120,7 @@ public sealed class AcquisitionFlow
                 if (result.ExitCode == 0)
                 {
                     var info2 = await _infoService.GetInfoAsync(candidate?.Path ?? ffmpegPath, ct).ConfigureAwait(false);
-                    if (info2 is not null)
+                    if (info2.Info is not null)
                     {
                         WriteN_OK_01();
                         return new AcquisitionOutcome { Status = AcquisitionStatus.Found, Candidate = candidate, ExitCode = 0 };
@@ -153,7 +150,7 @@ public sealed class AcquisitionFlow
                     if (result.ExitCode == 0)
                     {
                         var info2 = await _infoService.GetInfoAsync(candidate?.Path ?? ffmpegPath, ct).ConfigureAwait(false);
-                        if (info2 is not null)
+                        if (info2.Info is not null)
                         {
                             WriteN_OK_01();
                             return new AcquisitionOutcome { Status = AcquisitionStatus.Found, Candidate = candidate, ExitCode = 0 };

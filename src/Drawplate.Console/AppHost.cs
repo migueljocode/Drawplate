@@ -92,33 +92,39 @@ internal static class AppHost
             return verr.ExitCode;
         }
 
-        var platform = PlatformDetector.Detect();
+        var os = PlatformDetector.DetectOs();
         var candidate = FfmpegLocator.Locate(
             options.FfmpegPath,
             Environment.GetEnvironmentVariable("DRAWPLATE_FFMPEG"),
-            Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator) ?? [],
+            PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")),
             File.Exists,
-            Directory.GetDirectories,
-            platform.Os == OperatingSystemKind.Linux
-                ? ["/opt/homebrew/bin", "/usr/local/bin", "/home/linuxbrew/.linuxbrew/bin", "/usr/bin"]
-                : []);
+            FfmpegLocator.EnumerateDirectories,
+            KnownFolders.For(os, Environment.GetEnvironmentVariable),
+            os);
 
         if (candidate is null)
         {
+            // Package managers are looked up only now, when FFmpeg is missing.
+            var platform = PlatformDetector.Detect();
             var suggestions = InstallAdvisor.Suggestions(platform);
             global::System.Console.Error.WriteLine(InstallAdvisor.NotFoundText(platform, suggestions));
             return 3;
         }
 
         var infoService = new FfmpegInfoService(new ProcessLauncher());
-        var info = infoService.GetInfoAsync(candidate.Path, CancellationToken.None).GetAwaiter().GetResult();
-        if (info is null)
+        var infoResult = infoService.GetInfoAsync(candidate.Path, ct).GetAwaiter().GetResult();
+        if (infoResult.NotRunnable is { } notRunnable)
         {
-            global::System.Console.Error.WriteLine(Messages.E_FF_02(candidate.Path, "unknown"));
-            return 3;
+            return Fail(Messages.E_FF_02(candidate.Path, notRunnable.Reason));
+        }
+        if (infoResult.TooOld is { } tooOld)
+        {
+            return Fail(Messages.E_FF_07(candidate.Path, tooOld.Version.ToString()));
         }
 
-        var probe = new EncoderProbe(new ProcessLauncher(), infoService, platform.Os);
+        var info = infoResult.Info!;
+
+        var probe = new EncoderProbe(new ProcessLauncher(), infoService, os);
         var results = probe.ProbeAllAsync(info, CancellationToken.None).GetAwaiter().GetResult();
 
         if (options.ListEncoders)
@@ -150,7 +156,7 @@ internal static class AppHost
 
         var fs = new RealPlanFileSystem();
         var planSources = options.Files.Length > 0 ? options.Files : ImmutableArray.Create(inputFolder);
-        var plan = ConversionPlanner.Build(planSources, outputFolder, fs, platform.Os);
+        var plan = ConversionPlanner.Build(planSources, outputFolder, fs, os);
 
         if (plan.Collisions.Length > 0)
         {

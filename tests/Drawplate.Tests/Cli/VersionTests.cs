@@ -1,3 +1,4 @@
+using System;
 using System.Diagnostics;
 using System.IO;
 
@@ -9,6 +10,8 @@ namespace Drawplate.Tests.Cli;
 
 public class VersionTests
 {
+    private static readonly string ExeName = OperatingSystem.IsWindows() ? "drawplate.exe" : "drawplate";
+
     [Theory]
     [InlineData("-V")]
     [InlineData("--version")]
@@ -35,10 +38,10 @@ public class VersionTests
     {
         var testDir = Path.GetDirectoryName(typeof(VersionTests).Assembly.Location)!;
         var repoDir = Path.GetFullPath(Path.Combine(testDir, "..", "..", "..", "..", ".."));
-        var exe = Path.Combine(repoDir, "src", "Drawplate.Console", "bin", "Release", "net10.0", "drawplate");
+        var exe = Path.Combine(repoDir, "src", "Drawplate.Console", "bin", "Release", "net10.0", ExeName);
         if (!File.Exists(exe))
         {
-            exe = Path.Combine(repoDir, "src", "Drawplate.Console", "bin", "Debug", "net10.0", "drawplate");
+            exe = Path.Combine(repoDir, "src", "Drawplate.Console", "bin", "Debug", "net10.0", ExeName);
         }
         return exe;
     }
