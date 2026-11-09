@@ -161,3 +161,14 @@ Result: DONE. CI run 42619608587 (a000c5f): ubuntu, macos AND windows all green 
 [I] `-e <encoder>` pinning is not applied in this stage (ConvertOptions.Encoder is validated but the chain is still all passed encoders). EncoderChain is R11
 [I] InputDiscovery returns full paths (GetFullPath) and only regular files; a subfolder named x.mp4 is ignored
 [I] Windows failures of the R10 PlannerTests are fixed by the planner canonicalization and a normalized fake file system. CI on windows-latest is the proof
+
+### R11 Encoder selection, -l, hardware note, plan card
+Result: DONE. CI run 42712294490 (86273e7): ubuntu, macos, windows all green. Fixes during CI: OS-specific encoder names in tests, GpuDetector now catches SecurityException (product bug found on Windows)
+[V] Models, Services, Console build Release 0 warnings/0 errors; dotnet format exit 0
+[V] Real binary with FFmpeg 6.1.1 (no GPU, no /dev/dri): `-l` prints `cpu`, exit 0, no input needed; `-c` plan card `Encoder [CPU]`, no note; `-e nvenc` -> `Encoder 'nvenc' is not working on this machine.` with hint, exit 1; `-s hd` plan card `Max size hd 1280x720`; default chain `[CPU]`, no note (no GPU)
+[V] EncoderFlowTests (6 tests) compile against the xunit stub; FakeExe answers probes by encoder name
+[I] GpuDetector gets a test seam (static Override); AppHost is unchanged in how it asks for the GPU
+[I] DEFERRED: Flow_NvencFails_VaapiPasses_ChainVaapiCpu and the VAAPI parts of the chain need render nodes; CI runners have none. They need a VaapiDevices listing seam threaded through AppHost (not done)
+[I] Plan card shows the encoder chain via badges; the summary still prints the chain where the old code printed `[CPU] x1` (the summary is rebuilt in R12)
+[I] Summary line still shows output size 0 B; that is R12 (renderer and conversion loop)
+[I] AppHost recovered from a bad regex edit that dropped the WorkPlan/PlanWork/Convert tail; restored from the R10 text with the R11 changes. Verified by build and by the binary scenarios above

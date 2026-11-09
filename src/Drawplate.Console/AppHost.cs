@@ -8,6 +8,7 @@ using Drawplate.Console.Cli;
 using Drawplate.Console.Ui;
 using Drawplate.Models.Cli;
 using Drawplate.Models.Encoding;
+using Drawplate.Models.Failures;
 using Drawplate.Models.Planning;
 using Drawplate.Models.Setup;
 using Drawplate.Services.Conversion;
@@ -133,26 +134,69 @@ internal static class AppHost
         }
 
         var info = infoResult.Info!;
-        var probe = new EncoderProbe(new ProcessLauncher(), infoService, os);
-        var results = probe.ProbeAllAsync(info, ct).GetAwaiter().GetResult();
+        var log = options.Verbose ? (Action<string>)stderr.WriteLine : null;
+        var probe = new EncoderProbe(new ProcessLauncher(), infoService, os, log: log);
+        var results = probe.ProbeAsync(info, ProbeKinds(convert, os), ct).GetAwaiter().GetResult();
 
-        if (options.ListEncoders)
+        var working = results.Where(r => r.Passed).Select(r => r.Kind).ToImmutableArray();
+        var built = EncoderChain.Build(convert.Encoder is { } pinned ? EncoderSets.Id(pinned) : null, os, working);
+        if (built.Error is { } chainError)
         {
-            foreach (var r in results.Where(r => r.Passed))
-            {
-                stdout.WriteLine(EncoderSets.Id(r.Kind));
-            }
-            return (int)ExitCode.Ok;
+            return Fail(chainError, stderr);
         }
 
-        var chain = results.Where(r => r.Passed).Select(r => r.Kind).ToImmutableArray();
+        var chain = built.Chain;
         if (chain.IsEmpty)
         {
             stderr.WriteLine(Messages.E_FF_03().Text);
             return 3;
         }
 
-        return Convert(work!, convert, candidate.Path, chain, os, stdout, ct);
+        var note = HardwareNoteFor(results, chain);
+        if (options.ListEncoders)
+        {
+            foreach (var kind in chain)
+            {
+                stdout.WriteLine(EncoderSets.Id(kind));
+            }
+            if (note is not null)
+            {
+                stderr.WriteLine(note);
+            }
+            return (int)ExitCode.Ok;
+        }
+
+        return Convert(work!, convert, candidate.Path, chain, note, os, stdout, ct);
+    }
+
+    /// <summary>What to probe: all encoders for this OS, only the CPU for -c, or the pinned one plus the CPU.</summary>
+    private static ImmutableArray<EncoderKind> ProbeKinds(ConvertOptions convert, OperatingSystemKind os)
+    {
+        if (convert.Encoder is null)
+        {
+            return EncoderSets.For(os);
+        }
+
+        return convert.Encoder == EncoderKind.Cpu
+            ? [EncoderKind.Cpu]
+            : [convert.Encoder.Value, EncoderKind.Cpu];
+    }
+
+    /// <summary>The D.7 note. Shown only when a hardware probe actually ran (a process was started and reported a result).</summary>
+    private static string? HardwareNoteFor(ImmutableArray<ProbeResult> results, ImmutableArray<EncoderKind> chain)
+    {
+        var hardwareRan = results.Any(r => r.Kind != EncoderKind.Cpu
+            && r.FailureKind is not (ProbeFailureKind.NotListed or ProbeFailureKind.NoDevice));
+        if (!hardwareRan)
+        {
+            return null;
+        }
+
+        var anyHardwarePassed = chain.Any(kind => kind != EncoderKind.Cpu);
+        var nvenc = results.FirstOrDefault(r => r.Kind == EncoderKind.Nvenc && r.FailureKind == ProbeFailureKind.NvencDriverTooOld);
+        var minimumDriver = nvenc is null ? null : FailureClassifier.ParseNvenc(nvenc.StderrTail).MinimumDriver;
+
+        return HardwareNote.For(GpuDetector.HasGpu(), anyHardwarePassed, nvenc is not null, minimumDriver);
     }
 
     private sealed record WorkPlan(string InputLabel, string OutputFolder, ConversionPlan Plan);
@@ -223,6 +267,7 @@ internal static class AppHost
         ConvertOptions convert,
         string ffmpegPath,
         ImmutableArray<EncoderKind> chain,
+        string? note,
         OperatingSystemKind os,
         TextWriter stdout,
         CancellationToken ct)
@@ -232,17 +277,23 @@ internal static class AppHost
         Directory.CreateDirectory(work.OutputFolder);
 
         var totalInputSize = toConvert.Sum(f => new FileInfo(f.Source).Length);
+        var chainText = string.Join(" > ", chain.Select(EncoderSets.Badge));
         var renderer = new PlainRenderer(global::System.Console.OutputEncoding.CodePage == 65001);
         renderer.PlanCard(
             work.InputLabel,
             work.OutputFolder,
             convert.Quality,
-            null,
-            convert.MaxSize == SizeCap.None ? null : convert.MaxSize.ToString(),
-            "[CPU]",
+            QualityScale.ToCrf(convert.Quality),
+            SizeText(convert.MaxSize),
+            chainText,
             toConvert.Length,
             totalInputSize,
             !convert.NoTimestamps);
+
+        if (note is not null)
+        {
+            stdout.WriteLine(note);
+        }
 
         var ffprobe = FfprobeLocator.Find(ffmpegPath, PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")), File.Exists, os);
         var runner = new ConversionRunner(ffmpegPath, new ProcessLauncher(), new MediaProbe(new ProcessLauncher(), ffmpegPath, ffprobe));
@@ -268,7 +319,18 @@ internal static class AppHost
             stdout.WriteLine($"{glyph} [{index + 1}/{toConvert.Length}] {Path.GetFileName(file.Source)}");
         }
 
-        renderer.Summary(converted, failed, skipCount, totalInputSize, 0, "[CPU] x1", TimeSpan.Zero, work.OutputFolder);
+        renderer.Summary(converted, failed, skipCount, totalInputSize, 0, chainText, TimeSpan.Zero, work.OutputFolder);
         return failed > 0 ? (int)ExitCode.Failure : (int)ExitCode.Ok;
+    }
+
+    private static string? SizeText(SizeCap cap)
+    {
+        if (cap == SizeCap.None)
+        {
+            return null;
+        }
+
+        var (width, height) = SizeCaps.Box(cap);
+        return $"{cap.ToString().ToLowerInvariant()} {width}x{height}";
     }
 }

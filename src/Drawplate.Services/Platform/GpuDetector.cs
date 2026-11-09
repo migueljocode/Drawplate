@@ -11,7 +11,12 @@ public sealed record GpuResult(bool HasGpu, string? Vendor, string? Detail);
 
 public sealed class GpuDetector
 {
-    public static bool HasGpu()
+    /// <summary>Test seam: when set, it replaces the real hardware check.</summary>
+    public static Func<bool>? Override { get; set; }
+
+    public static bool HasGpu() => Override?.Invoke() ?? DetectHasGpu();
+
+    private static bool DetectHasGpu()
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
@@ -102,6 +107,10 @@ public sealed class GpuDetector
         }
         catch (UnauthorizedAccessException)
         {
+        }
+        catch (System.Security.SecurityException)
+        {
+            // A locked-down registry means "unknown", which must not stop a conversion.
         }
         return false;
     }
