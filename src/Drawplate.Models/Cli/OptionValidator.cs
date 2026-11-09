@@ -77,6 +77,7 @@ public static class OptionValidator
             InputFolder = raw.InputFolder,
             Files = raw.Files,
             NoTimestamps = raw.NoTimestamps,
+            OutputFolder = raw.OutputFolder,
         };
 
         return (options, null);

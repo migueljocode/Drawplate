@@ -15,11 +15,12 @@ public class FakePlanFileSystem : IPlanFileSystem
     private readonly HashSet<string> _files = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _directories = new(StringComparer.OrdinalIgnoreCase);
 
-    public void AddFile(string path) => _files.Add(path);
-    public void AddDirectory(string path) => _directories.Add(path);
+    // Keys are full paths so that "/out/clip.mp4" and the planner's Path.Combine result compare equal on every OS.
+    public void AddFile(string path) => _files.Add(Path.GetFullPath(path));
+    public void AddDirectory(string path) => _directories.Add(Path.GetFullPath(path));
 
-    public bool FileExists(string path) => _files.Contains(path);
-    public bool DirectoryExists(string path) => _directories.Contains(path);
+    public bool FileExists(string path) => _files.Contains(Path.GetFullPath(path));
+    public bool DirectoryExists(string path) => _directories.Contains(Path.GetFullPath(path));
     public string FullPath(string path) => Path.GetFullPath(path);
     public string ResolveLinks(string path) => path;
 }

@@ -12,4 +12,6 @@ public sealed class ConvertOptions
     public required string? InputFolder { get; init; }
     public required ImmutableArray<string> Files { get; init; }
     public required bool NoTimestamps { get; init; }
+    /// <summary>Output folder from -o, or null for the default (D.1).</summary>
+    public string? OutputFolder { get; init; }
 }

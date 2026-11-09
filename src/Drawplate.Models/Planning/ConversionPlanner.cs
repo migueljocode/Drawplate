@@ -69,7 +69,8 @@ public static class ConversionPlanner
             return PlanStatus.SkipUnsupported;
         }
 
-        var resolvedSource = fs.ResolveLinks(source);
+        // Canonicalize before comparing with the (full) output path: a relative source must match too.
+        var resolvedSource = fs.FullPath(fs.ResolveLinks(source));
         if (IsInsideOutput(resolvedSource, outputFull, os))
         {
             reason = "already in the output folder";
@@ -108,10 +109,6 @@ public static class ConversionPlanner
         ImmutableArray<PlannedFile> files,
         OperatingSystemKind os)
     {
-        var comparison = os is OperatingSystemKind.Linux
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.OrdinalIgnoreCase;
-
         var groups = files
             .Where(f => f.Status == PlanStatus.Convert)
             .GroupBy(f => f.TargetName, StringComparer.OrdinalIgnoreCase)

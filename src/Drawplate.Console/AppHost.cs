@@ -3,10 +3,8 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 
 using Drawplate.Console.Cli;
-using Drawplate.Console.Signals;
 using Drawplate.Console.Ui;
 using Drawplate.Models.Cli;
 using Drawplate.Models.Encoding;
@@ -41,58 +39,70 @@ internal static class AppHost
         }
     }
 
-    internal static int Run(string[] args, CancellationToken ct)
+    internal static int Run(string[] args, TextWriter stdout, TextWriter stderr, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(args);
-        var parsed = ArgParser.Parse(args);
+        ArgumentNullException.ThrowIfNull(stdout);
+        ArgumentNullException.ThrowIfNull(stderr);
 
-        if (Dispatch(parsed) is { } early)
+        var parsed = ArgParser.Parse(args);
+        if (Dispatch(parsed, stdout, stderr) is { } early)
         {
             return early;
         }
 
-        return RunConvert(parsed.Options!, ct);
+        return RunConvert(parsed.Options!, stdout, stderr, ct);
     }
 
-    private static int? Dispatch(ParsedCommand parsed) => parsed.Kind switch
+    private static int? Dispatch(ParsedCommand parsed, TextWriter stdout, TextWriter stderr) => parsed.Kind switch
     {
-        CommandKind.Help => Print(HelpText.Render()),
-        CommandKind.Version => Print(Messages.N_VERSION(VersionInfo.Current) + "\n"),
-        CommandKind.Error => Fail(parsed.Error!),
-        CommandKind.Setup or CommandKind.Doctor => Fail(Messages.E_TEMP_01()),
-        _ when parsed.Options is { } o && (o.InstallDeps || o.Interactive || o.NoInstall) => Fail(Messages.E_TEMP_01()),
+        CommandKind.Help => Print(stdout, HelpText.Render()),
+        CommandKind.Version => Print(stdout, Messages.N_VERSION(VersionInfo.Current) + "\n"),
+        CommandKind.Error => Fail(parsed.Error!, stderr),
+        CommandKind.Setup or CommandKind.Doctor => Fail(Messages.E_TEMP_01(), stderr),
+        _ when parsed.Options is { } o && (o.InstallDeps || o.Interactive || o.NoInstall) => Fail(Messages.E_TEMP_01(), stderr),
         _ => null,
     };
 
-    private static int Print(string text)
+    private static int Print(TextWriter stdout, string text)
     {
-        global::System.Console.Out.Write(text);
+        stdout.Write(text);
         return (int)ExitCode.Ok;
     }
 
-    private static int Fail(Message message)
+    private static int Fail(Message message, TextWriter stderr)
     {
-        global::System.Console.Error.WriteLine(message.Text);
+        stderr.WriteLine(message.Text);
         if (message.Hint is { } hint)
         {
-            global::System.Console.Error.WriteLine($"  {hint}");
+            stderr.WriteLine($"  {hint}");
         }
         return message.ExitCode;
     }
 
-    private static int RunConvert(RawOptions options, CancellationToken ct)
+    private static int RunConvert(RawOptions options, TextWriter stdout, TextWriter stderr, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
 
-        var validation = OptionValidator.Validate(options, OperatingSystemKind.Linux);
-        if (validation.Error is { } verr)
+        var os = PlatformDetector.DetectOs();
+        var validation = OptionValidator.Validate(options, os);
+        if (validation.Options is not { } convert)
         {
-            global::System.Console.Error.WriteLine(validation.Error.Text);
-            if (validation.Error.Hint is { } vh) global::System.Console.Error.WriteLine($"  {vh}");
-            return verr.ExitCode;
+            return Fail(validation.Error!, stderr);
         }
 
-        var os = PlatformDetector.DetectOs();
+        // Input and output problems are reported before FFmpeg is touched, so they start no process.
+        WorkPlan? work = null;
+        if (!options.ListEncoders)
+        {
+            var (plan, exit) = PlanWork(convert, os, stdout, stderr);
+            if (exit is { } planExit)
+            {
+                return planExit;
+            }
+            work = plan;
+        }
+
         var candidate = FfmpegLocator.Locate(
             options.FfmpegPath,
             Environment.GetEnvironmentVariable("DRAWPLATE_FFMPEG"),
@@ -107,7 +117,7 @@ internal static class AppHost
             // Package managers are looked up only now, when FFmpeg is missing.
             var platform = PlatformDetector.Detect();
             var suggestions = InstallAdvisor.Suggestions(platform);
-            global::System.Console.Error.WriteLine(InstallAdvisor.NotFoundText(platform, suggestions));
+            stderr.WriteLine(InstallAdvisor.NotFoundText(platform, suggestions));
             return 3;
         }
 
@@ -115,105 +125,150 @@ internal static class AppHost
         var infoResult = infoService.GetInfoAsync(candidate.Path, ct).GetAwaiter().GetResult();
         if (infoResult.NotRunnable is { } notRunnable)
         {
-            return Fail(Messages.E_FF_02(candidate.Path, notRunnable.Reason));
+            return Fail(Messages.E_FF_02(candidate.Path, notRunnable.Reason), stderr);
         }
         if (infoResult.TooOld is { } tooOld)
         {
-            return Fail(Messages.E_FF_07(candidate.Path, tooOld.Version.ToString()));
+            return Fail(Messages.E_FF_07(candidate.Path, tooOld.Version.ToString()), stderr);
         }
 
         var info = infoResult.Info!;
-
         var probe = new EncoderProbe(new ProcessLauncher(), infoService, os);
-        var results = probe.ProbeAllAsync(info, CancellationToken.None).GetAwaiter().GetResult();
+        var results = probe.ProbeAllAsync(info, ct).GetAwaiter().GetResult();
 
         if (options.ListEncoders)
         {
-            foreach (var r in results)
+            foreach (var r in results.Where(r => r.Passed))
             {
-                if (r.Passed) global::System.Console.WriteLine(EncoderSets.Id(r.Kind!));
+                stdout.WriteLine(EncoderSets.Id(r.Kind));
             }
-            return 0;
+            return (int)ExitCode.Ok;
         }
 
-        var chain = results.Where(r => r.Passed).Select(r => r.Kind!).ToImmutableArray();
+        var chain = results.Where(r => r.Passed).Select(r => r.Kind).ToImmutableArray();
         if (chain.IsEmpty)
         {
-            global::System.Console.Error.WriteLine(Messages.E_FF_03());
+            stderr.WriteLine(Messages.E_FF_03().Text);
             return 3;
         }
 
-        var inputFolder = options.InputFolder ?? ".";
-        var outputFolder = options.Files.Length > 0
-            ? Path.Combine(Directory.GetCurrentDirectory(), "compressed")
-            : Path.Combine(inputFolder, "compressed");
+        return Convert(work!, convert, candidate.Path, chain, os, stdout, ct);
+    }
 
-        if (options.Files.Length > 0 && !string.IsNullOrEmpty(options.InputFolder))
+    private sealed record WorkPlan(string InputLabel, string OutputFolder, ConversionPlan Plan);
+
+    /// <summary>Discovers inputs, plans them, and reports skips. Returns an exit code when the run must stop.</summary>
+    private static (WorkPlan? Plan, int? Exit) PlanWork(ConvertOptions convert, OperatingSystemKind os, TextWriter stdout, TextWriter stderr)
+    {
+        var folderMode = convert.Files.IsEmpty;
+        var inputFolder = convert.InputFolder ?? ".";
+
+        ImmutableArray<string> sources;
+        if (folderMode)
         {
-            global::System.Console.Error.WriteLine(Messages.E_USAGE_11());
-            return 2;
+            var (files, error) = InputDiscovery.FromFolder(inputFolder);
+            if (error is not null)
+            {
+                return (null, Fail(error, stderr));
+            }
+            sources = files;
+        }
+        else
+        {
+            sources = convert.Files;
         }
 
-        var fs = new RealPlanFileSystem();
-        var planSources = options.Files.Length > 0 ? options.Files : ImmutableArray.Create(inputFolder);
-        var plan = ConversionPlanner.Build(planSources, outputFolder, fs, os);
+        var outputFolder = Path.GetFullPath(
+            convert.OutputFolder ?? (folderMode ? Path.Combine(inputFolder, "compressed") : Path.Combine(".", "compressed")));
+        if (File.Exists(outputFolder))
+        {
+            return (null, Fail(Messages.E_USAGE_08(outputFolder), stderr));
+        }
+
+        var plan = ConversionPlanner.Build(sources, outputFolder, new RealPlanFileSystem(), os);
+
+        foreach (var file in plan.Files)
+        {
+            switch (file.Status)
+            {
+                case PlanStatus.Missing:
+                    stderr.WriteLine(Messages.W_01(file.Source).Text);
+                    break;
+                case PlanStatus.NotAFile:
+                    stderr.WriteLine(Messages.W_02(file.Source).Text);
+                    break;
+                case PlanStatus.SkipUnsupported:
+                    stdout.WriteLine($"- {Path.GetFileName(file.Source)} (unsupported file type)");
+                    break;
+            }
+        }
 
         if (plan.Collisions.Length > 0)
         {
-            global::System.Console.Error.WriteLine(Messages.E_USAGE_09(plan.Collisions));
-            return 2;
+            return (null, Fail(Messages.E_USAGE_09(plan.Collisions), stderr));
         }
 
-        var convertFiles = plan.Files.Where(f => f.Status == PlanStatus.Convert).ToImmutableArray();
-        var skipCount = plan.Files.Length - convertFiles.Length;
-
-        if (convertFiles.Length == 0 && skipCount == 0)
+        var anything = plan.Files.Any(f => f.Status is PlanStatus.Convert or PlanStatus.SkipExists or PlanStatus.SkipInsideOutput);
+        if (!anything)
         {
-            global::System.Console.Error.WriteLine(Messages.E_RUN_01());
-            global::System.Console.Error.WriteLine("  Supported formats: mov, mp4, mkv, avi, webm.");
-            return 1;
+            return (null, Fail(Messages.E_RUN_01(), stderr));
         }
 
-        Directory.CreateDirectory(outputFolder);
+        var inputLabel = folderMode ? inputFolder : "files";
+        return (new WorkPlan(inputLabel, outputFolder, plan), null);
+    }
 
-        var totalInputSize = 0L;
-        foreach (var f in convertFiles)
-        {
-            totalInputSize += new FileInfo(f.Source).Length;
-        }
+    private static int Convert(
+        WorkPlan work,
+        ConvertOptions convert,
+        string ffmpegPath,
+        ImmutableArray<EncoderKind> chain,
+        OperatingSystemKind os,
+        TextWriter stdout,
+        CancellationToken ct)
+    {
+        var toConvert = work.Plan.Files.Where(f => f.Status == PlanStatus.Convert).ToImmutableArray();
+        var skipCount = work.Plan.Files.Length - toConvert.Length;
+        Directory.CreateDirectory(work.OutputFolder);
 
+        var totalInputSize = toConvert.Sum(f => new FileInfo(f.Source).Length);
         var renderer = new PlainRenderer(global::System.Console.OutputEncoding.CodePage == 65001);
         renderer.PlanCard(
-            inputFolder,
-            outputFolder,
-            int.Parse(options.Quality ?? "50"),
+            work.InputLabel,
+            work.OutputFolder,
+            convert.Quality,
             null,
-            options.MaxSize,
+            convert.MaxSize == SizeCap.None ? null : convert.MaxSize.ToString(),
             "[CPU]",
-            convertFiles.Length,
+            toConvert.Length,
             totalInputSize,
-            !options.NoTimestamps);
+            !convert.NoTimestamps);
 
-        var ffprobe = FfprobeLocator.Find(candidate.Path, PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")), File.Exists, os);
-        var runner = new ConversionRunner(candidate.Path, new ProcessLauncher(), new MediaProbe(new ProcessLauncher(), candidate.Path, ffprobe));
-        int converted = 0, failed = 0;
-        var fileArray = plan.Files.ToArray();
-        for (int fileIdx = 0; fileIdx < fileArray.Length; fileIdx++)
+        var ffprobe = FfprobeLocator.Find(ffmpegPath, PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")), File.Exists, os);
+        var runner = new ConversionRunner(ffmpegPath, new ProcessLauncher(), new MediaProbe(new ProcessLauncher(), ffmpegPath, ffprobe));
+
+        var converted = 0;
+        var failed = 0;
+        for (var index = 0; index < toConvert.Length; index++)
         {
-            var f = fileArray[fileIdx];
-            if (f.Status != PlanStatus.Convert) continue;
+            var file = toConvert[index];
+            var result = runner.RunAsync(file.Source, work.OutputFolder, chain, convert.Quality, convert.MaxSize, convert.NoTimestamps, null, ct)
+                .GetAwaiter().GetResult();
 
-            var result = runner.RunAsync(f.Source, outputFolder, chain, int.Parse(options.Quality ?? "50"), SizeCap.None, options.NoTimestamps, null, CancellationToken.None).GetAwaiter().GetResult();
-
-            if (result.Status == FileResultStatus.Converted) converted++;
-            else if (result.Status == FileResultStatus.Failed) failed++;
+            if (result.Status == FileResultStatus.Converted)
+            {
+                converted++;
+            }
+            else if (result.Status == FileResultStatus.Failed)
+            {
+                failed++;
+            }
 
             var glyph = result.Status == FileResultStatus.Converted ? "✓" : "✗";
-            global::System.Console.WriteLine($"{glyph} [{fileIdx + 1}/{plan.Files.Length}] {Path.GetFileName(f.Source)}");
+            stdout.WriteLine($"{glyph} [{index + 1}/{toConvert.Length}] {Path.GetFileName(file.Source)}");
         }
 
-        renderer.Summary(converted, failed, skipCount, totalInputSize, 0, "[CPU] x1", TimeSpan.Zero, outputFolder);
-
-        return failed > 0 ? 1 : 0;
+        renderer.Summary(converted, failed, skipCount, totalInputSize, 0, "[CPU] x1", TimeSpan.Zero, work.OutputFolder);
+        return failed > 0 ? (int)ExitCode.Failure : (int)ExitCode.Ok;
     }
 }

@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
+using System.Linq;
 
 using Drawplate.Models.Cli;
 using Drawplate.Models.Planning;
@@ -8,6 +11,7 @@ namespace Drawplate.Services.Conversion;
 
 public static class InputDiscovery
 {
+    /// <summary>Supported, visible, regular files directly in <paramref name="folder"/>, as full paths, in <see cref="InputRules.NameOrder"/>.</summary>
     public static (ImmutableArray<string> Files, Message? Error) FromFolder(string folder)
     {
         ArgumentNullException.ThrowIfNull(folder);
@@ -17,26 +21,13 @@ public static class InputDiscovery
             return ([], Messages.E_USAGE_07(folder));
         }
 
-        var files = ImmutableArray.CreateBuilder<string>();
-        foreach (var entry in Directory.GetFileSystemEntries(folder))
-        {
-            var name = Path.GetFileName(entry);
-            if (name is null)
-            {
-                continue;
-            }
-            if (InputRules.IsHidden(name))
-            {
-                continue;
-            }
-            if (!InputRules.IsSupported(name))
-            {
-                continue;
-            }
-            files.Add(name);
-        }
+        var files = Directory.GetFileSystemEntries(folder)
+            .Where(entry => File.Exists(entry))
+            .Where(entry => !InputRules.IsHidden(Path.GetFileName(entry)) && InputRules.IsSupported(Path.GetFileName(entry)))
+            .Select(entry => Path.GetFullPath(entry))
+            .OrderBy(entry => Path.GetFileName(entry), Comparer<string>.Create(InputRules.NameOrder))
+            .ToImmutableArray();
 
-        Array.Sort(files.ToArray(), InputRules.NameOrder);
-        return (files.ToImmutable(), null);
+        return (files, null);
     }
 }

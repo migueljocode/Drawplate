@@ -148,3 +148,16 @@ Result: DONE. CI run 42617881950 (d02f754): ubuntu and macos green; windows fail
 [I] Deviation: FfprobeLocator added as a separate file (the plan lists it); unit tests cover sibling and none
 [I] Fixtures: tests/Drawplate.Tests/Fixtures/banner/{video-audio,audio-only,duration-na}.txt are FFmpeg banner-shaped text written for this stage (the plan named the test but not the fixture files)
 [I] ffprobe is invoked with the same argv as before (the plan's queries); a non-zero exit from ffprobe falls back to the banner
+
+### R10 Input discovery and planning wiring
+Result: DONE. CI run 42619608587 (a000c5f): ubuntu, macos AND windows all green (first fully green run on all three OS). PR #10
+[V] Models, Services, Console build Release 0 warnings/0 errors; dotnet format exit 0
+[V] Binary with real FFmpeg 6.1.1 (planning before FFmpeg is located): `-o <file>` -> E-USAGE-08 exit 2; `x/clip.mp4 y/clip.mov` -> E-USAGE-09 exit 2 with both groups listed; `notes.txt` alone -> E-RUN-01 exit 1; output equals input with one mp4 -> all skipped, exit 0; `-i <folder>` with a real 3 s clip -> converted, exit 0, default output `<folder>/compressed`; file mode with a real clip -> `compressed` in the current folder, exit 0; `-i` with file names -> E-USAGE-11 exit 2
+[V] R03 REGRESSION found and fixed here: positional files were stored only in ParsedCommand.Files, never in RawOptions.Files, so file-mode runs fell through to scanning the current folder (E-RUN-01). Also RawOptions.InputFolder defaulted to "." which made the "-i with files" check fire on every run. Both fixed; the R03 tests did not catch it because they checked ParsedCommand
+[V] Planner fix (product bug, any OS): sources were compared to the output folder without canonicalizing, so a relative source inside the output folder would be converted again. Sources are now canonicalized with fs.FullPath. This is also the Windows PlannerTests fix (the fake file system keys are full paths now)
+[I] Deviation: AppHost.Run takes (args, stdout, stderr, ct) (CancellationToken last, CA1068). Flow tests use it in-process. PlainRenderer still writes to Console; R12 moves it to the injected writers
+[I] Deviation: planning runs before FFmpeg is located, so usage and collision errors start no process; the plan does not say the order
+[I] N-01 prints `- <name> (unsupported file type)` on stdout; the skip glyph comes with the renderer rework (R11/R12)
+[I] `-e <encoder>` pinning is not applied in this stage (ConvertOptions.Encoder is validated but the chain is still all passed encoders). EncoderChain is R11
+[I] InputDiscovery returns full paths (GetFullPath) and only regular files; a subfolder named x.mp4 is ignored
+[I] Windows failures of the R10 PlannerTests are fixed by the planner canonicalization and a normalized fake file system. CI on windows-latest is the proof

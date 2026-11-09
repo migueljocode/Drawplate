@@ -10,6 +10,6 @@ internal static class Program
     {
         ArgumentNullException.ThrowIfNull(args);
         using var signals = new SignalHandler();
-        return AppHost.RunGuarded(() => AppHost.Run(args, signals.Token));
+        return AppHost.RunGuarded(() => AppHost.Run(args, global::System.Console.Out, global::System.Console.Error, signals.Token));
     }
 }

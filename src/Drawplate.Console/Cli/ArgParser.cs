@@ -81,8 +81,15 @@ internal static class ArgParser
         {
             CommandKind.Setup => ParsedCommand.Setup(options),
             CommandKind.Doctor => ParsedCommand.Doctor(options),
-            _ => ParsedCommand.Convert(options, files.ToImmutable()),
+            _ => ParsedCommand.Convert(WithFiles(options, files.ToImmutable()), files.ToImmutable()),
         };
+    }
+
+    /// <summary>Positional files belong to the options too: OptionValidator reads them from there.</summary>
+    private static RawOptions WithFiles(RawOptions options, ImmutableArray<string> files)
+    {
+        options.Files = files;
+        return options;
     }
 
     private static Message? ParseLong(string[] args, ref int index, RawOptions options)
