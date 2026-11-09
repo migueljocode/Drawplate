@@ -13,24 +13,9 @@ namespace Drawplate.Tests.Process;
 [Collection("FakeExe")]
 public class InfoServiceTests
 {
-    private static readonly string FakeExeDll = FakeExeHarness.FakeExePath;
-
-    /// <summary>A launcher script that runs FakeExe: a shell script on Unix, a .cmd file on Windows.</summary>
     private static string MakeWrapper(string scriptPath)
     {
-        var wrapper = Path.GetTempFileName();
-        File.Delete(wrapper);
-        if (OperatingSystem.IsWindows())
-        {
-            wrapper = Path.ChangeExtension(wrapper, ".cmd");
-            File.WriteAllText(wrapper, $"@echo off\r\ndotnet \"{FakeExeDll}\" %*\r\n");
-        }
-        else
-        {
-            File.WriteAllText(wrapper, $"#!/bin/sh\nexec dotnet {FakeExeDll} \"$@\"\n");
-            File.SetUnixFileMode(wrapper, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        }
-
+        var wrapper = FakeExeHarness.CreateWrapper();
         Environment.SetEnvironmentVariable("FAKE_EXE_SCRIPT", scriptPath);
         return wrapper;
     }

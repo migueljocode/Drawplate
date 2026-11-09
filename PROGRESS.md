@@ -121,5 +121,19 @@ Result: DONE. CI run 42562529548 (3591bee): ubuntu and macos green; windows fail
 [I] Deviation: FfmpegLocator.EnumerateDirectories added because Directory.GetDirectories throws when WinGet is not installed
 [I] Windows fixes in tests: InfoServiceTests uses a .cmd wrapper on Windows (was a #!/bin/sh script + chmod); VersionTests uses drawplate.exe on Windows; LocatorTests.Path_Found builds paths with Path.Combine. Target: the 8 known Windows failures assigned to R07 (VersionTests x3 [-V, --version, UnknownOption], Path_Found, InfoServiceTests x4)
 [I] The earlier note "R07 (6)" was a miscount: R07 has 8, R06 had 1 (resolved), R10 has 2
-[I] Known interim state from R05: on a machine with FFmpeg, normal runs reach EncoderProbe, which still calls FfmpegArgv.Probe(kind) without a VaapiTarget; Linux then reports "Unexpected error: Value cannot be null (Parameter 'vaapi')" (exit 1). R09 wires the VAAPI device
+[I] Known interim state from R05: on a machine with FFmpeg, normal runs reach EncoderProbe, which still calls FfmpegArgv.Probe(kind) without a VaapiTarget; Linux then reports "Unexpected error: Value cannot be null (Parameter 'vaapi')" (exit 1). resolved in R08 (probe now finds the render node)
 [I] InfoServiceTests.Timeout_IsNotRunnable stays skipped: it would take the full 10 s timeout; the launcher timeout is covered by LauncherTests
+
+### R08 Encoder probing
+Result: DONE. CI run 42563521517 (bd47b24): ubuntu and macos green; windows fails only on the 2 PlannerTests assigned to R10 (PR #8)
+[V] Services and Console build Release 0 warnings/0 errors; dotnet format exit 0
+[V] Behavior runner (13 checks, FakeExe as ffmpeg): unlisted hardware encoder starts no process; VAAPI without render nodes -> NoDevice, no process; renderD129 passes after renderD128 fails (3 processes, nodes sorted); standard VAAPI fails then low-power passes (2 processes); passing VaapiTarget recorded; `kinds=[Cpu]` starts exactly one probe and logs one argv line; hung probe killed at the 1 s timeout (1021 ms); Cpu without libx264 starts no process; start failure returns a failed result; cancel throws; the 3 stderr fixtures all fail without throwing
+[V] Binary against real FFmpeg 6.1.1 (no GPU, no /dev/dri): `drawplate -l` prints `cpu`, exit 0, 0.4 s total; FFmpeg lists h264_nvenc, h264_qsv, h264_vaapi, so NVENC and QSV were probed and failed fast and VAAPI was skipped as NoDevice
+[V] The interim crash from R05/R07 (`Value cannot be null (Parameter 'vaapi')` on Linux with FFmpeg) is gone
+[V] New tests compile against the xunit stub (EncoderProbeTests, InfoServiceTests, FakeExeHarness)
+[I] Deviation: EncoderProbe has a third optional ctor parameter `listDirectory` (default VaapiDevices.ListDirectory) so tests can inject render nodes; the plan named only probeTimeout and log
+[I] Deviation: FakeExeHarness.CreateWrapper() added and InfoServiceTests now uses it (the wrapper logic was duplicated otherwise)
+[I] Fixtures hold exactly the captured lines from plan.md Part 3 (not fuller FFmpeg logs, which the plan does not contain): nvenc-no-libcuda.txt, qsv-mfx-session.txt, vaapi-no-display.txt
+[I] FailureClassifier is unchanged (plan: only if a fixture needs it). The three captures classify as Unknown; the tests require Passed=false and no exception only. B28 stays open for N-GPU-02 classification
+[I] Probe log format: `probe <id>: <argv>` per run and `probe <id> failed: <stderr tail>` per failure; the Console passes no logger yet (R11 wires --verbose)
+[V] CI first failed to build (run 42563189431): CA1822 on the private nested Rig.Probe; fixed by a static helper. Lesson: CA1822 is enforced for members of private nested types, so my local filter must not hide it there

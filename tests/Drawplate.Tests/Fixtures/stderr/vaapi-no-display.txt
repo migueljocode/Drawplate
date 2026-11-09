@@ -1,0 +1,2 @@
+No VA display found for device /dev/dri/renderD128.
+Device creation failed: -22.

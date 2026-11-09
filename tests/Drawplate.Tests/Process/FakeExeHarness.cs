@@ -31,6 +31,27 @@ public static class FakeExeHarness
         return Path.GetFullPath(Path.Combine(testDir, "..", "..", "..", "..", ".."));
     }
 
+    /// <summary>
+    /// An executable that runs FakeExe: a shell script on Unix, a .cmd file on Windows. The caller deletes it.
+    /// </summary>
+    public static string CreateWrapper()
+    {
+        var wrapper = Path.GetTempFileName();
+        File.Delete(wrapper);
+        if (OperatingSystem.IsWindows())
+        {
+            wrapper = Path.ChangeExtension(wrapper, ".cmd");
+            File.WriteAllText(wrapper, $"@echo off\r\ndotnet \"{FakeExePath}\" %*\r\n");
+        }
+        else
+        {
+            File.WriteAllText(wrapper, $"#!/bin/sh\nexec dotnet \"{FakeExePath}\" \"$@\"\n");
+            File.SetUnixFileMode(wrapper, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        return wrapper;
+    }
+
     public static string WriteScript(IEnumerable<string> actions)
     {
         var path = Path.GetTempFileName();
