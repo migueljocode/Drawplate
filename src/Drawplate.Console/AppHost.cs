@@ -214,7 +214,7 @@ internal static class AppHost
     private sealed record WorkPlan(string InputLabel, string OutputFolder, ConversionPlan Plan);
 
     /// <summary>Discovers inputs, plans them, and reports skips. Returns an exit code when the run must stop.</summary>
-    private static (WorkPlan? Plan, int? Exit) PlanWork(ConvertOptions convert, OperatingSystemKind os, IRenderer renderer, TextWriter stderr)
+    private static (WorkPlan? Plan, int? Exit) PlanWork(ConvertOptions convert, OperatingSystemKind os, PlainRenderer renderer, TextWriter stderr)
     {
         var folderMode = convert.Files.IsEmpty;
         var inputFolder = convert.InputFolder ?? ".";
@@ -282,7 +282,7 @@ internal static class AppHost
         VaapiTarget? vaapi,
         string? note,
         OperatingSystemKind os,
-        IRenderer renderer,
+        PlainRenderer renderer,
         Action<string>? log,
         CancellationToken ct)
     {
