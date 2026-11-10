@@ -323,6 +323,8 @@ internal static class AppHost
 
         for (var index = 0; index < listed.Length; index++)
         {
+            ct.ThrowIfCancellationRequested();
+
             var file = listed[index];
             var number = index + 1;
             var name = Path.GetFileName(file.Source);
