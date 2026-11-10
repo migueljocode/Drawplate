@@ -75,7 +75,7 @@ public class ConversionFlowTests
         Assert.Contains("Max size  hd 1280x720", result.Stdout, StringComparison.Ordinal);
         Assert.Contains("Encoder   [CPU]", result.Stdout, StringComparison.Ordinal);
         Assert.Contains("Encoders  [CPU] x1", result.Stdout, StringComparison.Ordinal);
-        Assert.True(run.LogLines().Any(l => l.Contains("-progress", StringComparison.Ordinal) && l.Contains("min(iw,1280)", StringComparison.Ordinal)));
+        Assert.Contains(run.LogLines(), l => l.Contains("-progress", StringComparison.Ordinal) && l.Contains("min(iw,1280)", StringComparison.Ordinal));
     }
 
     [Fact]
