@@ -37,6 +37,8 @@ public sealed class ConversionRunner
         int quality,
         SizeCap cap,
         bool noTimestamps,
+        VaapiTarget? vaapi,
+        Action<string>? log,
         FileProgressHandler? progress,
         CancellationToken ct)
     {
@@ -74,8 +76,27 @@ public sealed class ConversionRunner
             {
                 ct.ThrowIfCancellationRequested();
 
-                var args = FfmpegArgv.Convert(source, partial, encoder, quality, cap);
-                var process = _launcher.Start(_ffmpegPath, args, new ProcessOptions(Timeout: TimeSpan.FromMinutes(30)));
+                if (encoder == EncoderKind.Vaapi && vaapi is null)
+                {
+                    // No render node was found by the probe, so this encoder cannot be used for this file.
+                    lastStderr = "no VAAPI device";
+                    lastFailureKind = FailureKind.DeviceAccess;
+                    continue;
+                }
+
+                var args = FfmpegArgv.Convert(source, partial, encoder, quality, cap, vaapi);
+                log?.Invoke("ffmpeg " + string.Join(' ', args));
+
+                // No timeout: a long video may legitimately take hours. Cancellation kills the process tree.
+                IRunningProcess process;
+                try
+                {
+                    process = _launcher.Start(_ffmpegPath, args, new ProcessOptions(Cancellation: ct));
+                }
+                catch (ProcessStartFailedException)
+                {
+                    return Failed(source, target, "cannot start ffmpeg", sw.Elapsed);
+                }
 
                 var duration = mediaInfo.Duration;
 
@@ -138,6 +159,10 @@ public sealed class ConversionRunner
 
                 lastStderr = stderrTail;
                 lastFailureKind = FailureClassifier.Classify(stderrTail);
+                if (!string.IsNullOrWhiteSpace(stderrTail))
+                {
+                    log?.Invoke(stderrTail);
+                }
 
                 if (File.Exists(partial))
                 {

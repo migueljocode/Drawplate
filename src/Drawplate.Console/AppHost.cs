@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -9,6 +12,7 @@ using Drawplate.Console.Ui;
 using Drawplate.Models.Cli;
 using Drawplate.Models.Encoding;
 using Drawplate.Models.Failures;
+using Drawplate.Models.Formatting;
 using Drawplate.Models.Planning;
 using Drawplate.Models.Setup;
 using Drawplate.Services.Conversion;
@@ -92,11 +96,13 @@ internal static class AppHost
             return Fail(validation.Error!, stderr);
         }
 
+        var renderer = new PlainRenderer(stdout, Utf8Output());
+
         // Input and output problems are reported before FFmpeg is touched, so they start no process.
         WorkPlan? work = null;
         if (!options.ListEncoders)
         {
-            var (plan, exit) = PlanWork(convert, os, stdout, stderr);
+            var (plan, exit) = PlanWork(convert, os, renderer, stderr);
             if (exit is { } planExit)
             {
                 return planExit;
@@ -166,8 +172,14 @@ internal static class AppHost
             return (int)ExitCode.Ok;
         }
 
-        return Convert(work!, convert, candidate.Path, chain, note, os, stdout, ct);
+        var vaapi = results.FirstOrDefault(r => r.Kind == EncoderKind.Vaapi && r.Passed)?.Vaapi;
+        return Convert(work!, convert, candidate.Path, chain, vaapi, note, os, renderer, log, ct);
     }
+
+    /// <summary>C.5: Unicode glyphs only when the console output is UTF-8 and TERM is not dumb.</summary>
+    private static bool Utf8Output() =>
+        global::System.Console.OutputEncoding.CodePage == 65001
+        && !string.Equals(Environment.GetEnvironmentVariable("TERM"), "dumb", StringComparison.Ordinal);
 
     /// <summary>What to probe: all encoders for this OS, only the CPU for -c, or the pinned one plus the CPU.</summary>
     private static ImmutableArray<EncoderKind> ProbeKinds(ConvertOptions convert, OperatingSystemKind os)
@@ -202,7 +214,7 @@ internal static class AppHost
     private sealed record WorkPlan(string InputLabel, string OutputFolder, ConversionPlan Plan);
 
     /// <summary>Discovers inputs, plans them, and reports skips. Returns an exit code when the run must stop.</summary>
-    private static (WorkPlan? Plan, int? Exit) PlanWork(ConvertOptions convert, OperatingSystemKind os, TextWriter stdout, TextWriter stderr)
+    private static (WorkPlan? Plan, int? Exit) PlanWork(ConvertOptions convert, OperatingSystemKind os, IRenderer renderer, TextWriter stderr)
     {
         var folderMode = convert.Files.IsEmpty;
         var inputFolder = convert.InputFolder ?? ".";
@@ -236,13 +248,13 @@ internal static class AppHost
             switch (file.Status)
             {
                 case PlanStatus.Missing:
-                    stderr.WriteLine(Messages.W_01(file.Source).Text);
+                    stderr.WriteLine(Messages.W_01(Sanitizer.ForDisplay(file.Source)).Text);
                     break;
                 case PlanStatus.NotAFile:
-                    stderr.WriteLine(Messages.W_02(file.Source).Text);
+                    stderr.WriteLine(Messages.W_02(Sanitizer.ForDisplay(file.Source)).Text);
                     break;
                 case PlanStatus.SkipUnsupported:
-                    stdout.WriteLine($"- {Path.GetFileName(file.Source)} (unsupported file type)");
+                    renderer.Unsupported(Path.GetFileName(file.Source));
                     break;
             }
         }
@@ -258,7 +270,7 @@ internal static class AppHost
             return (null, Fail(Messages.E_RUN_01(), stderr));
         }
 
-        var inputLabel = folderMode ? inputFolder : "files";
+        var inputLabel = folderMode ? inputFolder : $"{sources.Length} file(s)";
         return (new WorkPlan(inputLabel, outputFolder, plan), null);
     }
 
@@ -267,32 +279,35 @@ internal static class AppHost
         ConvertOptions convert,
         string ffmpegPath,
         ImmutableArray<EncoderKind> chain,
+        VaapiTarget? vaapi,
         string? note,
         OperatingSystemKind os,
-        TextWriter stdout,
+        IRenderer renderer,
+        Action<string>? log,
         CancellationToken ct)
     {
-        var toConvert = work.Plan.Files.Where(f => f.Status == PlanStatus.Convert).ToImmutableArray();
-        var skipCount = work.Plan.Files.Length - toConvert.Length;
+        // Files that are listed and numbered: the ones to convert and the ones skipped for a known reason.
+        // Missing files, directories and unsupported types were already reported as W-01, W-02 and N-01.
+        var listed = work.Plan.Files
+            .Where(f => f.Status is PlanStatus.Convert or PlanStatus.SkipExists or PlanStatus.SkipInsideOutput)
+            .ToImmutableArray();
         Directory.CreateDirectory(work.OutputFolder);
 
-        var totalInputSize = toConvert.Sum(f => new FileInfo(f.Source).Length);
-        var chainText = string.Join(" > ", chain.Select(EncoderSets.Badge));
-        var renderer = new PlainRenderer(global::System.Console.OutputEncoding.CodePage == 65001);
+        var totalInputSize = listed.Sum(f => SizeOf(f.Source));
         renderer.PlanCard(
             work.InputLabel,
             work.OutputFolder,
             convert.Quality,
             QualityScale.ToCrf(convert.Quality),
             SizeText(convert.MaxSize),
-            chainText,
-            toConvert.Length,
+            string.Join(" > ", chain.Select(EncoderSets.Badge)),
+            listed.Length,
             totalInputSize,
             !convert.NoTimestamps);
 
         if (note is not null)
         {
-            stdout.WriteLine(note);
+            renderer.Note(note);
         }
 
         var ffprobe = FfprobeLocator.Find(ffmpegPath, PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")), File.Exists, os);
@@ -300,27 +315,75 @@ internal static class AppHost
 
         var converted = 0;
         var failed = 0;
-        for (var index = 0; index < toConvert.Length; index++)
+        var skipped = 0;
+        long inputBytes = 0;
+        long outputBytes = 0;
+        var used = new Dictionary<string, int>(StringComparer.Ordinal);
+        var clock = Stopwatch.StartNew();
+
+        for (var index = 0; index < listed.Length; index++)
         {
-            var file = toConvert[index];
-            var result = runner.RunAsync(file.Source, work.OutputFolder, chain, convert.Quality, convert.MaxSize, convert.NoTimestamps, null, ct)
+            var file = listed[index];
+            var number = index + 1;
+            var name = Path.GetFileName(file.Source);
+
+            if (file.Status != PlanStatus.Convert)
+            {
+                skipped++;
+                renderer.FileSkipped(number, listed.Length, name, SkipReason(file.Status));
+                continue;
+            }
+
+            var result = runner.RunAsync(file.Source, work.OutputFolder, chain, convert.Quality, convert.MaxSize, convert.NoTimestamps, vaapi, log, null, ct)
                 .GetAwaiter().GetResult();
 
-            if (result.Status == FileResultStatus.Converted)
+            switch (result.Status)
             {
-                converted++;
+                case FileResultStatus.Converted:
+                    converted++;
+                    inputBytes += result.InputSize;
+                    outputBytes += result.OutputSize;
+                    used[result.Encoder!] = used.GetValueOrDefault(result.Encoder!) + 1;
+                    renderer.FileFinished(number, listed.Length, name, true, BadgeFor(result.Encoder!, chain), result.Elapsed, result.InputSize, result.OutputSize, null);
+                    break;
+                case FileResultStatus.Skipped:
+                    skipped++;
+                    renderer.FileSkipped(number, listed.Length, name, result.Reason ?? "output already exists");
+                    break;
+                default:
+                    failed++;
+                    renderer.FileFinished(number, listed.Length, name, false, null, result.Elapsed, result.InputSize, 0, result.Reason);
+                    break;
             }
-            else if (result.Status == FileResultStatus.Failed)
-            {
-                failed++;
-            }
-
-            var glyph = result.Status == FileResultStatus.Converted ? "✓" : "✗";
-            stdout.WriteLine($"{glyph} [{index + 1}/{toConvert.Length}] {Path.GetFileName(file.Source)}");
         }
 
-        renderer.Summary(converted, failed, skipCount, totalInputSize, 0, chainText, TimeSpan.Zero, work.OutputFolder);
+        var encoderCounts = string.Join(" ", chain
+            .Where(kind => used.ContainsKey(EncoderSets.Id(kind)))
+            .Select(kind => $"{EncoderSets.Badge(kind)} x{used[EncoderSets.Id(kind)].ToString(CultureInfo.InvariantCulture)}"));
+        renderer.Summary(converted, failed, skipped, inputBytes, outputBytes, encoderCounts, clock.Elapsed, work.OutputFolder);
         return failed > 0 ? (int)ExitCode.Failure : (int)ExitCode.Ok;
+    }
+
+    private static string SkipReason(PlanStatus status) =>
+        status == PlanStatus.SkipInsideOutput ? "already in the output folder" : "output already exists";
+
+    private static string BadgeFor(string encoderId, ImmutableArray<EncoderKind> chain) =>
+        chain.Where(kind => EncoderSets.Id(kind) == encoderId).Select(EncoderSets.Badge).FirstOrDefault() ?? "[CPU]";
+
+    private static long SizeOf(string path)
+    {
+        try
+        {
+            return new FileInfo(path).Length;
+        }
+        catch (IOException)
+        {
+            return 0;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return 0;
+        }
     }
 
     private static string? SizeText(SizeCap cap)
