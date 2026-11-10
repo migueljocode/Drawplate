@@ -83,17 +83,6 @@ public class SignalTests
         Assert.True(run.WaitUntilNoProcessMentions(TimeSpan.FromSeconds(5)), "a FakeExe or drawplate process is still running");
     }
 
-    public sealed class UnixFactAttribute : FactAttribute
-    {
-        public UnixFactAttribute()
-        {
-            if (OperatingSystem.IsWindows())
-            {
-                Skip = "Needs POSIX signals.";
-            }
-        }
-    }
-
     private sealed record Outcome(int ExitCode, string Stderr, TimeSpan Elapsed);
 
     private sealed class HungRun : IDisposable
