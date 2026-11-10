@@ -100,7 +100,7 @@ public class SignalTests
     {
         private readonly string _script = Path.GetTempFileName();
         private readonly string _wrapper = FakeExeHarness.CreateWrapper();
-        private readonly Process _process;
+        private readonly global::System.Diagnostics.Process _process;
         private readonly List<string> _stderr = [];
 
         private HungRun(string root)
@@ -129,7 +129,7 @@ public class SignalTests
             psi.Environment["FAKE_EXE_SCRIPT"] = _script;
             psi.Environment["FAKE_EXE_LOG"] = Log;
 
-            _process = Process.Start(psi)!;
+            _process = global::System.Diagnostics.Process.Start(psi)!;
             _process.OutputDataReceived += (_, _) => { };
             _process.ErrorDataReceived += (_, e) =>
             {
@@ -164,7 +164,7 @@ public class SignalTests
             var psi = new ProcessStartInfo { FileName = "kill", UseShellExecute = false };
             psi.ArgumentList.Add("-" + signal);
             psi.ArgumentList.Add(_process.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            using (var kill = Process.Start(psi)!)
+            using (var kill = global::System.Diagnostics.Process.Start(psi)!)
             {
                 kill.WaitForExit();
             }
@@ -186,7 +186,7 @@ public class SignalTests
                 var psi = new ProcessStartInfo { FileName = "pgrep", UseShellExecute = false, RedirectStandardOutput = true };
                 psi.ArgumentList.Add("-f");
                 psi.ArgumentList.Add(Root);
-                using var pgrep = Process.Start(psi)!;
+                using var pgrep = global::System.Diagnostics.Process.Start(psi)!;
                 pgrep.StandardOutput.ReadToEnd();
                 pgrep.WaitForExit();
                 if (pgrep.ExitCode == 1)
