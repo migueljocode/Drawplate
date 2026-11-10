@@ -95,7 +95,14 @@ internal static class Program
                 {
                     try
                     {
-                        using var fs = File.Create(path);
+                        if (obj.TryGetPropertyValue("content", out var contentNode))
+                        {
+                            File.WriteAllText(path, contentNode?.GetValue<string>() ?? string.Empty);
+                        }
+                        else
+                        {
+                            using var fs = File.Create(path);
+                        }
                     }
                     catch (IOException)
                     {
