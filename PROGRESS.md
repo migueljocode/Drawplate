@@ -172,3 +172,16 @@ Result: DONE. CI run 42712294490 (86273e7): ubuntu, macos, windows all green. Fi
 [I] Plan card shows the encoder chain via badges; the summary still prints the chain where the old code printed `[CPU] x1` (the summary is rebuilt in R12)
 [I] Summary line still shows output size 0 B; that is R12 (renderer and conversion loop)
 [I] AppHost recovered from a bad regex edit that dropped the WorkPlan/PlanWork/Convert tail; restored from the R10 text with the R11 changes. Verified by build and by the binary scenarios above
+
+### R12 Conversion loop, renderer, summary, --verbose
+Result: DONE. CI run 42924235568 (f0af20c, before squash): ubuntu, macos, windows all green; each shows Build 0 Warning(s)/0 Error(s) and `Passed: 327, Failed: 0, Skipped: 1`. PR #12
+[V] No .NET SDK in the authoring sandbox (download blocked by the proxy); GitHub Actions on the PR was the gate. Three red CI cycles on the way: CA1859 (private methods must take the concrete PlainRenderer) and xUnit2012 in a new test; both fixed, no suppressions
+[V] Tests written first and pushed as a separate commit (075e8bc, compile-red because the APIs did not exist); then the implementation. The red run itself did not execute (no CI trigger on plain pushes), so "failed for the right reason" is the compile error, not a test failure
+[V] New tests: PlainRendererTests (9, golden text from D.4, both glyph sets), RunnerTests (4), ConversionFlowTests (5)
+[I] Deviation: `tests/FakeExe/Program.cs` gained a `content` property for `createFile` (a fake conversion must write a non-empty file; the runner rejects empty output). The stage lists no FakeExe change
+[I] Deviation: skip reason text is `output already exists` (plan Part 7 D.4 and E), not `already exists` as the R12 text says; the two sources disagree and Part 7 is binding
+[I] Deviation: the `Speed` row of the summary (`N.Nx realtime`) is not printed; it needs the media duration per file and `FileResult` has none (FileResult.cs is outside the stage's file list). Proposal: add `MediaDuration` to FileResult in a later stage
+[I] Deviation: the 30-minute process timeout on conversions was removed (a long video would have been killed); cancellation still kills the tree. Needs the owner's OK
+[I] Numbered list N includes files skipped as `output already exists` or `already in the output folder`; W-01, W-02 and N-01 lines are unnumbered. Plan card `Files` counts the numbered files
+[I] VAAPI without a probed render node is skipped for that file and the next chain entry is tried; the Vaapi path is only exercised with FakeExe (no render node on CI): [U] on real hardware until R20
+[U] Not run: real FFmpeg conversion through the CLI (R16), cancellation (R13)
