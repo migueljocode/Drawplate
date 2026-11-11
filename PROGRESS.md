@@ -201,4 +201,5 @@ Result: IN PROGRESS.
 [I] Implemented asynchronous doctor diagnostics for FFmpeg source/version, libx264, optional ffprobe, working encoders, and hardware notes.
 [I] Wired `setup`, `doctor`, `-y`, `-n`, and `-m` into AppHost; added the no-elevation source guard.
 [U] Full R14 acquisition/doctor/menu acceptance tests are not yet implemented.
-[U] Build, format, and test verification is pending CI; do not treat R14 as complete until the full acceptance list in plan.md passes.
+[V] CI build and format pass on Ubuntu, macOS and Windows (run 42955943854, commit f0ac30e). Ubuntu test suite passes in that run.
+[U] macOS and Windows test jobs are still running; the full R14 acceptance suite is not implemented yet. Do not treat R14 as complete until the full acceptance list in plan.md passes.
