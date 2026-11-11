@@ -204,7 +204,10 @@ internal static class AppHost
         var results = probe.ProbeAsync(info, ProbeKinds(convert, os), ct).GetAwaiter().GetResult();
 
         var working = results.Where(r => r.Passed).Select(r => r.Kind).ToImmutableArray();
-        var built = EncoderChain.Build(convert.Encoder is { } pinned ? EncoderSets.Id(pinned) : null, os, working);
+        var built = EncoderChain.Build(
+            !options.Interactive && convert.Encoder is { } pinned ? EncoderSets.Id(pinned) : null,
+            os,
+            working);
         if (built.Error is { } chainError)
         {
             return Fail(chainError, stderr);
