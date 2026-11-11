@@ -387,9 +387,11 @@ function Invoke-DrawplateInstall {
     }
 }
 
-$exitCode = Invoke-DrawplateInstall
-if ($PSCommandPath) {
-    exit $exitCode
-}
+$exitCode = [int](Invoke-DrawplateInstall)
 $global:LASTEXITCODE = $exitCode
+$scriptPath = $PSCommandPath
+if (-not $scriptPath) { $scriptPath = $MyInvocation.MyCommand.Path }
+if ($scriptPath) {
+    [Environment]::Exit($exitCode)
+}
 return

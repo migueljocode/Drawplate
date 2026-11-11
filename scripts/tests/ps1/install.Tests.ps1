@@ -119,11 +119,13 @@ Describe 'Drawplate installer contract' {
         $localAppData = Join-Path $script:temp 'home-badsums'
         $bin = Join-Path $localAppData 'Programs/Drawplate'
         $result = Run-Installer $server $localAppData $bin
-        Write-Host ('BAD SUMS URL: ' + $server.BaseUrl + ' OUT: ' + $result.Out + ' ERR: ' + $result.Err)
-        $result.Code | Should -Be 13
+        $stagingCount = @(Get-ChildItem -LiteralPath $localAppData -Recurse -Directory -Filter '.drawplate-staging-*' -ErrorAction SilentlyContinue).Count
+        $binaryExists = Test-Path -LiteralPath (Join-Path $bin 'drawplate.exe')
+        Write-Host ("T-INS-04 launch=-File exit=$($result.Code) staging=$stagingCount binary=$binaryExists")
         $result.Err | Should -Match 'Checksum mismatch'
-        (Test-Path -LiteralPath (Join-Path $bin 'drawplate.exe')) | Should -BeFalse
-        @(Get-ChildItem -LiteralPath $localAppData -Recurse -Directory -Filter '.drawplate-staging-*' -ErrorAction SilentlyContinue).Count | Should -Be 0
+        $binaryExists | Should -BeFalse
+        $stagingCount | Should -Be 0
+        $result.Code | Should -Be 13
     }
 
     It 'T-INS-05 rejects a truncated download and permits retry' {
@@ -131,10 +133,12 @@ Describe 'Drawplate installer contract' {
         $localAppData = Join-Path $script:temp 'home-truncate'
         $bin = Join-Path $localAppData 'Programs/Drawplate'
         $failed = Run-Installer $server $localAppData $bin
-        Write-Host ('TRUNCATE URL: ' + $server.BaseUrl + ' OUT: ' + $failed.Out + ' ERR: ' + $failed.Err)
+        $stagingCount = @(Get-ChildItem -LiteralPath $localAppData -Recurse -Directory -Filter '.drawplate-staging-*' -ErrorAction SilentlyContinue).Count
+        $binaryExists = Test-Path -LiteralPath (Join-Path $bin 'drawplate.exe')
+        Write-Host ("T-INS-05 launch=-File exit=$($failed.Code) staging=$stagingCount binary=$binaryExists")
+        $binaryExists | Should -BeFalse
+        $stagingCount | Should -Be 0
         $failed.Code | Should -BeIn @(12, 13)
-        (Test-Path -LiteralPath (Join-Path $bin 'drawplate.exe')) | Should -BeFalse
-        @(Get-ChildItem -LiteralPath $localAppData -Recurse -Directory -Filter '.drawplate-staging-*' -ErrorAction SilentlyContinue).Count | Should -Be 0
         Stop-ReleaseServer $server
         (Run-Installer $script:server $localAppData $bin).Code | Should -Be 0
     }
@@ -152,11 +156,14 @@ Describe 'Drawplate installer contract' {
         [System.IO.File]::WriteAllText((Join-Path $folder 'SHA256SUMS'), ($hash + '  ' + $name + [Environment]::NewLine), (New-Object System.Text.UTF8Encoding($false)))
         $before = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $script:bin 'drawplate.exe')).Hash
         $result = Run-Installer $script:server $script:localAppData $script:bin 'v1.2.4'
-        Write-Host ('BAD BINARY OUT: ' + $result.Out + ' ERR: ' + $result.Err)
+        $restoredHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $script:bin 'drawplate.exe')).Hash
+        $backupExists = Test-Path -LiteralPath ((Join-Path $script:bin 'drawplate.exe') + '.old')
+        $stagingCount = @(Get-ChildItem -LiteralPath $script:bin -Directory -Filter '.drawplate-staging-*' -ErrorAction SilentlyContinue).Count
+        Write-Host ("T-INS-06 launch=-File exit=$($result.Code) restored=$($restoredHash -eq $before) backup=$backupExists staging=$stagingCount")
+        $restoredHash | Should -Be $before
+        $backupExists | Should -BeFalse
+        $stagingCount | Should -Be 0
         $result.Code | Should -Be 14
-        (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $script:bin 'drawplate.exe')).Hash | Should -Be $before
-        (Test-Path -LiteralPath ((Join-Path $script:bin 'drawplate.exe') + '.old')) | Should -BeFalse
-        @(Get-ChildItem -LiteralPath $script:bin -Directory -Filter '.drawplate-staging-*' -ErrorAction SilentlyContinue).Count | Should -Be 0
     }
 
     It 'T-INS-07 rejects an active lock folder' {
