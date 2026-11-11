@@ -262,7 +262,7 @@ internal static class AppHost
 
         if (chain.IsEmpty)
         {
-            stderr.WriteLine(Messages.E_FF_03().Text);
+            stderr.WriteLine(Messages.E_FF_03(os).Text);
             return 3;
         }
 
