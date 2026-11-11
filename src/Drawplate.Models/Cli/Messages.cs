@@ -3,6 +3,7 @@ using System.Linq;
 
 namespace Drawplate.Models.Cli;
 
+using Drawplate.Models.Encoding;
 using Drawplate.Models.Planning;
 
 public static class Messages
@@ -71,15 +72,22 @@ public static class Messages
 
     public static string N_VERSION(string version) => $"drawplate {version}";
 
-    public static Message E_TEMP_01() =>
-        new("E-TEMP-01", "This option is not available yet.", null, 2);
-
     public static Message E_FF_02(string path, string reason) =>
         new("E-FF-02", $"FFmpeg at {path} could not be run ({reason}).", "Reinstall it, or choose another with --ffmpeg-path.", 3);
 
-    public static Message E_FF_03() =>
-        new("E-FF-03", "This FFmpeg build has no libx264 encoder and no working hardware encoder, so nothing can encode.", "Install the full build.", 3);
+    public static Message E_FF_03(OperatingSystemKind os) =>
+        new("E-FF-03", "This FFmpeg build has no libx264 encoder and no working hardware encoder, so nothing can encode.", os switch
+        {
+            OperatingSystemKind.Windows => "Install the full build: winget install --id Gyan.FFmpeg -e",
+            OperatingSystemKind.MacOS => "Install it with: brew install ffmpeg",
+            _ => "See \"Troubleshooting FFmpeg\" in the README."
+        }, 3);
 
-    public static Message E_FF_07(string path, string version) =>
-        new("E-FF-07", $"FFmpeg {version} at {path} is too old; Drawplate needs 6.0 or newer.", "Update FFmpeg, or choose a newer one with --ffmpeg-path.", 3);
+    public static Message E_FF_07(string version, OperatingSystemKind os) =>
+        new("E-FF-07", $"FFmpeg {version} is older than the supported minimum 6.0.", os switch
+        {
+            OperatingSystemKind.Windows => "Upgrade it: winget upgrade --id Gyan.FFmpeg -e",
+            OperatingSystemKind.MacOS => "brew upgrade ffmpeg",
+            _ => "Update it with your package manager."
+        }, 3);
 }
