@@ -29,8 +29,13 @@ public sealed class DoctorService
     private readonly FfmpegInfoService _infoService;
     private readonly IProcessLauncher _launcher;
     private readonly PlatformInfo _platform;
+    private readonly Func<string?, FfmpegCandidate?> _locator;
 
-    public DoctorService(FfmpegInfoService infoService, IProcessLauncher launcher, PlatformInfo platform)
+    public DoctorService(
+        FfmpegInfoService infoService,
+        IProcessLauncher launcher,
+        PlatformInfo platform,
+        Func<string?, FfmpegCandidate?>? locator = null)
     {
         ArgumentNullException.ThrowIfNull(infoService);
         ArgumentNullException.ThrowIfNull(launcher);
@@ -38,19 +43,13 @@ public sealed class DoctorService
         _infoService = infoService;
         _launcher = launcher;
         _platform = platform;
+        _locator = locator ?? LocateSystem;
     }
 
     public async Task<DoctorReport> RunAsync(string? ffmpegPath, CancellationToken ct)
     {
         var os = _platform.Os;
-        var candidate = FfmpegLocator.Locate(
-            ffmpegPath,
-            Environment.GetEnvironmentVariable("DRAWPLATE_FFMPEG"),
-            PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")),
-            File.Exists,
-            FfmpegLocator.EnumerateDirectories,
-            KnownFolders.For(os, Environment.GetEnvironmentVariable),
-            os);
+        var candidate = _locator(ffmpegPath);
 
         var lines = ImmutableArray.CreateBuilder<DoctorLine>();
         if (candidate is null)
@@ -127,6 +126,19 @@ public sealed class DoctorService
         }
 
         return new DoctorReport { Lines = lines.ToImmutable(), ExitCode = 0 };
+    }
+
+    private FfmpegCandidate? LocateSystem(string? ffmpegPath)
+    {
+        var os = _platform.Os;
+        return FfmpegLocator.Locate(
+            ffmpegPath,
+            Environment.GetEnvironmentVariable("DRAWPLATE_FFMPEG"),
+            PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")),
+            File.Exists,
+            FfmpegLocator.EnumerateDirectories,
+            KnownFolders.For(os, Environment.GetEnvironmentVariable),
+            os);
     }
 
     private static string SourceName(FfmpegSource source) => source switch
