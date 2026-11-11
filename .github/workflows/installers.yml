@@ -1,6 +1,8 @@
 name: Installer CI
 
 on:
+  push:
+    branches: ['**']
   pull_request:
     paths:
       - 'scripts/**'

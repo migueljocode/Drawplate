@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
+ROOT=$(CDPATH= cd -- "$(dirname "$0")/../../.." && pwd)
 INSTALLER="$ROOT/scripts/dist/install.sh"
 BINARY="${DRAWPLATE_TEST_BINARY:?Set DRAWPLATE_TEST_BINARY to the published binary}"
 RID="${DRAWPLATE_TEST_RID:?Set DRAWPLATE_TEST_RID}"
@@ -10,7 +10,8 @@ cleanup() {
     if [ -n "$SERVER_PID" ]; then kill "$SERVER_PID" 2>/dev/null || true; fi
     rm -rf "$TMP"
 }
-trap cleanup EXIT INT TERM
+trap cleanup 0
+trap 'cleanup; exit 130' INT TERM HUP
 RELEASE="$TMP/release"
 TAG_DIR="$RELEASE/download/v1.2.3"
 mkdir -p "$TAG_DIR" "$TMP/home"
