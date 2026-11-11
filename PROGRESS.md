@@ -196,11 +196,9 @@ Result: DONE. CI run 42928618632 (before this docs commit): ubuntu, macos, windo
 
 
 ### R14 Setup, doctor, interactive menu, install flags
-Result: IN PROGRESS.
-[I] Implemented the acquisition flow with nullable FFmpeg path handling, injected output writers, platform install guidance, and post-install relocation/revalidation.
+Result: DONE.
+[I] Implemented FFmpeg acquisition with nullable path handling, injected output writers, platform install guidance, and post-install relocation/revalidation. The flow covers no-install, assume-yes, interactive accept/decline, non-interactive, missing installer, failed install, and post-install lookup paths.
 [I] Implemented asynchronous doctor diagnostics for FFmpeg source/version, libx264, optional ffprobe, working encoders, and hardware notes. Doctor exits 3 when neither libx264 nor a hardware encoder is usable.
-[I] Wired `setup`, `doctor`, `-y`, `-n`, and `-m` into AppHost. `-y` is a setup-only action and exits after setup; interactive mode probes all available encoders, lets menu choices override pinned options, and runs the menu before input planning.
-[I] Added Setup acceptance coverage: `AcquisitionFlowTests`, `AcquisitionRelocationTests`, `DoctorTests`, `MenuTests`, and `SetupCliTests`; locator seams provide deterministic acquisition/doctor scenarios. Added the no-elevation source guard.
-[V] CI run 42958644652 (commit 5c37603): Ubuntu, macOS and Windows build, format, test, publish and binary verification all passed. Each OS test suite passed (one existing skipped test on Unix; six Windows-only skips).
-[I] Corrected E-FF-03/E-FF-07 to use the documented wording and platform-specific recovery hints; chain-empty now prints the recovery hint as well.
-[U] Latest follow-up CI run 42958778320 (commit f45caea) is still running on Ubuntu; Windows and macOS checks have passed so far. Keep R14 in progress until that latest run completes successfully and the remaining acceptance checklist is confirmed.
+[I] Wired `setup`, `doctor`, `-y`, `-n`, and `-m` into AppHost. `-y` is setup-only and exits after setup; interactive mode probes all available encoders, lets menu choices override pinned options, and runs the menu before input planning.
+[I] Added acquisition, relocation, doctor, menu, setup CLI, and no-elevation acceptance tests. Locator and ffprobe seams make the failure and optional-dependency cases deterministic.
+[V] CI run 42959324706 (commit 220ba83): Ubuntu, macOS and Windows build, format, test, publish, and binary verification all passed.
