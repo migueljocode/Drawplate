@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 using Drawplate.Models.Encoding;
 using Drawplate.Models.Setup;
 using Drawplate.Services.Ffmpeg;
+using Drawplate.Services.Setup;
+using Drawplate.Tests.Process;
 
 using Xunit;
 
