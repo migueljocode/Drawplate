@@ -105,7 +105,7 @@ internal static class AppHost
         return report.ExitCode;
     }
 
-    private static IPrompt CreatePrompt(TextWriter output) =>
+    private static ConsolePrompt CreatePrompt(TextWriter output) =>
         new ConsolePrompt(
             global::System.Console.In,
             output,
