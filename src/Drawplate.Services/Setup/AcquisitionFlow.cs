@@ -73,7 +73,7 @@ public sealed class AcquisitionFlow
         {
             if (mode == AcquisitionMode.SetupCommand)
             {
-                _stdout.WriteLine("FFmpeg is already installed.");
+                await _stdout.WriteLineAsync("FFmpeg is already installed.").ConfigureAwait(false);
                 return Exit(0);
             }
 
@@ -85,7 +85,7 @@ public sealed class AcquisitionFlow
         if (candidate is not null
             && candidate.Source is FfmpegSource.Argument or FfmpegSource.Environment)
         {
-            WriteInfoFailure(candidate.Path, info!);
+            await WriteInfoFailureAsync(candidate.Path, info!).ConfigureAwait(false);
             return Exit(3);
         }
 
@@ -93,7 +93,7 @@ public sealed class AcquisitionFlow
         {
             if (candidate is null)
             {
-                WriteNotFound();
+                await WriteNotFoundAsync().ConfigureAwait(false);
             }
             else
             {
@@ -140,7 +140,7 @@ public sealed class AcquisitionFlow
         var result = await _installRunner.RunAsync(suggestion, ct).ConfigureAwait(false);
         if (!result.Started || result.ExitCode != 0)
         {
-            WriteInstallFailure(result.ExitCode ?? -1);
+            await WriteInstallFailureAsync(result.ExitCode ?? -1).ConfigureAwait(false);
             return Exit(3);
         }
 
@@ -148,7 +148,7 @@ public sealed class AcquisitionFlow
         var candidate = Locate(ffmpegPath);
         if (candidate is null)
         {
-            WriteNotFoundAfterInstall();
+            await WriteNotFoundAfterInstallAsync().ConfigureAwait(false);
             return Exit(3);
         }
 
@@ -161,7 +161,7 @@ public sealed class AcquisitionFlow
 
         if (mode == AcquisitionMode.SetupCommand)
         {
-            _stdout.WriteLine("FFmpeg installed.");
+            await _stdout.WriteLineAsync("FFmpeg installed.").ConfigureAwait(false);
             return Exit(0);
         }
 
@@ -182,40 +182,40 @@ public sealed class AcquisitionFlow
             os);
     }
 
-    private void WriteNotFound() =>
-        _stderr.WriteLine(InstallAdvisor.NotFoundText(_platform, InstallAdvisor.Suggestions(_platform)));
+    private Task WriteNotFoundAsync() =>
+        _stderr.WriteLineAsync(InstallAdvisor.NotFoundText(_platform, InstallAdvisor.Suggestions(_platform)));
 
-    private void WriteInfoFailure(string path, FfmpegInfoResult result)
+    private async Task WriteInfoFailureAsync(string path, FfmpegInfoResult result)
     {
         if (result.TooOld is { } tooOld)
         {
             var message = Messages.E_FF_07(path, tooOld.Version.ToString());
-            WriteMessage(message);
+            await WriteMessageAsync(message).ConfigureAwait(false);
             return;
         }
 
-        WriteMessage(Messages.E_FF_02(path, result.NotRunnable?.Reason ?? "unknown"));
+        await WriteMessageAsync(Messages.E_FF_02(path, result.NotRunnable?.Reason ?? "unknown")).ConfigureAwait(false);
     }
 
-    private void WriteMessage(Message message)
+    private async Task WriteMessageAsync(Message message)
     {
-        _stderr.WriteLine(message.Text);
+        await _stderr.WriteLineAsync(message.Text).ConfigureAwait(false);
         if (message.Hint is { } hint)
         {
-            _stderr.WriteLine($"  {hint}");
+            await _stderr.WriteLineAsync($"  {hint}").ConfigureAwait(false);
         }
     }
 
-    private void WriteNotFoundAfterInstall()
+    private async Task WriteNotFoundAfterInstallAsync()
     {
-        _stderr.WriteLine("FFmpeg was installed, but Drawplate cannot find it yet.");
-        _stderr.WriteLine("  Open a new terminal and run Drawplate again. Run 'drawplate doctor' to see where it looks.");
+        await _stderr.WriteLineAsync("FFmpeg was installed, but Drawplate cannot find it yet.").ConfigureAwait(false);
+        await _stderr.WriteLineAsync("  Open a new terminal and run Drawplate again. Run 'drawplate doctor' to see where it looks.").ConfigureAwait(false);
     }
 
-    private void WriteInstallFailure(int code)
+    private async Task WriteInstallFailureAsync(int code)
     {
-        _stderr.WriteLine($"The install command failed (exit code {code}).");
-        _stderr.WriteLine("  See \"Troubleshooting FFmpeg\" in the README.");
+        await _stderr.WriteLineAsync($"The install command failed (exit code {code}).").ConfigureAwait(false);
+        await _stderr.WriteLineAsync("  See \"Troubleshooting FFmpeg\" in the README.").ConfigureAwait(false);
     }
 
     private static AcquisitionOutcome Found(FfmpegCandidate candidate) =>
