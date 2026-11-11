@@ -27,7 +27,7 @@ public sealed partial class AcquisitionFlowTests
         var prompt = new TestPrompt(false, false);
         var (flow, stdout, stderr) = CreateFlow(prompt, null, OperatingSystemKind.Linux);
 
-        var outcome = await flow.RunAsync(AcquisitionMode.Convert, false, true, null, CancellationToken.None);
+        var outcome = await flow.RunAsync(AcquisitionMode.Convert, false, true, null, CancellationToken.None).ConfigureAwait(true);
 
         Assert.Equal(AcquisitionStatus.Exit, outcome.Status);
         Assert.Equal(3, outcome.ExitCode);
@@ -42,7 +42,7 @@ public sealed partial class AcquisitionFlowTests
         var prompt = new TestPrompt(true, false);
         var (flow, _, stderr) = CreateFlow(prompt, null, OperatingSystemKind.Linux);
 
-        var outcome = await flow.RunAsync(AcquisitionMode.Convert, false, true, null, CancellationToken.None);
+        var outcome = await flow.RunAsync(AcquisitionMode.Convert, false, true, null, CancellationToken.None).ConfigureAwait(true);
 
         Assert.Equal(3, outcome.ExitCode);
         Assert.Contains("Install it with your package manager", stderr.ToString(), StringComparison.Ordinal);
@@ -55,7 +55,7 @@ public sealed partial class AcquisitionFlowTests
     {
         var (flow, _, stderr) = CreateFlow(new TestPrompt(false, false), null, OperatingSystemKind.Linux);
 
-        var outcome = await flow.RunAsync(AcquisitionMode.SetupCommand, true, false, null, CancellationToken.None);
+        var outcome = await flow.RunAsync(AcquisitionMode.SetupCommand, true, false, null, CancellationToken.None).ConfigureAwait(true);
 
         Assert.Equal(3, outcome.ExitCode);
         Assert.Contains("FFmpeg was not found.", stderr.ToString(), StringComparison.Ordinal);
@@ -67,7 +67,7 @@ public sealed partial class AcquisitionFlowTests
     {
         var (flow, _, stderr) = CreateFlow(new TestPrompt(false, false), null, OperatingSystemKind.Linux);
 
-        var outcome = await flow.RunAsync(AcquisitionMode.Convert, false, false, null, CancellationToken.None);
+        var outcome = await flow.RunAsync(AcquisitionMode.Convert, false, false, null, CancellationToken.None).ConfigureAwait(true);
 
         Assert.Equal(3, outcome.ExitCode);
         Assert.Contains("FFmpeg was not found.", stderr.ToString(), StringComparison.Ordinal);
@@ -81,7 +81,7 @@ public sealed partial class AcquisitionFlowTests
         var (flow, _, stderr) = CreateFlow(prompt, null, OperatingSystemKind.Windows,
             _ => null, tools: ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "winget"));
 
-        var outcome = await flow.RunAsync(AcquisitionMode.SetupCommand, false, false, null, CancellationToken.None);
+        var outcome = await flow.RunAsync(AcquisitionMode.SetupCommand, false, false, null, CancellationToken.None).ConfigureAwait(true);
 
         Assert.Equal(3, outcome.ExitCode);
         Assert.Equal(1, prompt.ConfirmCalls);
@@ -94,7 +94,7 @@ public sealed partial class AcquisitionFlowTests
     {
         var (flow, _, stderr) = CreateFlow(new TestPrompt(false, false), null, OperatingSystemKind.Windows);
 
-        var outcome = await flow.RunAsync(AcquisitionMode.SetupCommand, true, false, null, CancellationToken.None);
+        var outcome = await flow.RunAsync(AcquisitionMode.SetupCommand, true, false, null, CancellationToken.None).ConfigureAwait(true);
 
         Assert.Equal(3, outcome.ExitCode);
         Assert.Contains("winget was not found.", stderr.ToString(), StringComparison.Ordinal);
@@ -121,7 +121,7 @@ public sealed partial class AcquisitionFlowTests
             var (flow, _, _) = CreateFlow(prompt, null, OperatingSystemKind.Windows, locator, launcher,
                 ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "winget"));
 
-            var outcome = await flow.RunAsync(AcquisitionMode.Convert, true, false, null, CancellationToken.None);
+            var outcome = await flow.RunAsync(AcquisitionMode.Convert, true, false, null, CancellationToken.None).ConfigureAwait(true);
 
             Assert.Equal(AcquisitionStatus.Found, outcome.Status);
             Assert.Equal(candidate, outcome.Candidate);
@@ -148,7 +148,7 @@ public sealed partial class AcquisitionFlowTests
         var (flow, _, stderr) = CreateFlow(prompt, null, OperatingSystemKind.MacOS, locator, launcher,
             ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "brew"));
 
-        var outcome = await flow.RunAsync(AcquisitionMode.SetupCommand, false, false, null, CancellationToken.None);
+        var outcome = await flow.RunAsync(AcquisitionMode.SetupCommand, false, false, null, CancellationToken.None).ConfigureAwait(true);
 
         Assert.Equal(3, outcome.ExitCode);
         Assert.Contains("FFmpeg was installed, but Drawplate cannot find it yet.", stderr.ToString(), StringComparison.Ordinal);
@@ -164,7 +164,7 @@ public sealed partial class AcquisitionFlowTests
         var (flow, _, stderr) = CreateFlow(prompt, null, OperatingSystemKind.MacOS,
             _ => null, launcher, ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "brew"));
 
-        var outcome = await flow.RunAsync(AcquisitionMode.SetupCommand, false, false, null, CancellationToken.None);
+        var outcome = await flow.RunAsync(AcquisitionMode.SetupCommand, false, false, null, CancellationToken.None).ConfigureAwait(true);
 
         Assert.Equal(3, outcome.ExitCode);
         Assert.Contains("The install command failed (exit code 7).", stderr.ToString(), StringComparison.Ordinal);
@@ -186,7 +186,7 @@ public sealed partial class AcquisitionFlowTests
             var candidate = new FfmpegCandidate(wrapper, FfmpegSource.Argument);
             var (flow, stdout, _) = CreateFlow(new TestPrompt(false, false), candidate, OperatingSystemKind.Linux);
 
-            var outcome = await flow.RunAsync(AcquisitionMode.SetupCommand, false, true, wrapper, CancellationToken.None);
+            var outcome = await flow.RunAsync(AcquisitionMode.SetupCommand, false, true, wrapper, CancellationToken.None).ConfigureAwait(true);
 
             Assert.Equal(0, outcome.ExitCode);
             Assert.Equal("FFmpeg is already installed." + Environment.NewLine, stdout.ToString());
@@ -249,7 +249,7 @@ public sealed partial class AcquisitionFlowTests
 
         private static async IAsyncEnumerable<string> EmptyLines()
         {
-            await Task.CompletedTask;
+            await Task.CompletedTask.ConfigureAwait(false);
             yield break;
         }
     }
