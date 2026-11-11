@@ -25,10 +25,14 @@ Result: **DONE** (merged to main @ `c240e2c`, PR #17).
 [V] Root cause of Windows exit 1 was `Invoke-DrawplateInstall` emitting `System.Object[]` (HttpResponseMessage from `EnsureSuccessStatusCode`); fixed with `[void]` so the function returns a single int.
 
 ### 2026-11-11 R19 Documentation, honest status, release engineering
-Result: **IN PROGRESS** (branch `task/R19-docs`; see plan.md).
+Result: **IN PROGRESS** (branch `task/R19-docs`; see plan.md / PR #19).
 [V] R18 close-out written in this file.
-[V] README internal plan-anchor (“section H.5”) removed.
-[U] Full README troubleshooting catalogue (original 13 entries), release.yml scaffold, missing ADRs (0002 name, spike ADRs) still open within this stage.
+[V] README: options table, 13-entry Troubleshooting FFmpeg section, no internal plan anchors.
+[V] ADR 0002 (project name Drawplate) added; ADR 0001 and 0003 retained (0003 still [U] on measurements).
+[V] `.github/workflows/release.yml` (manual dispatch, dry-run, linux-x64/arm64, osx-arm64, win-x64) and `.github/dependabot.yml` added.
+[V] CHANGELOG.md annotated that PROGRESS.md is authoritative for repair-stage status.
+[U] End-to-end dry-run of release.yml on a fork not executed in this session; first real tag is the verification.
+[U] Spike ADRs beyond 0003 (process/cancellation, etc.) not backfilled; recorded only if evidence exists.
 
 ### R20 Acceptance on the target machine
 Result: **NOT STARTED** (owner manual). Commands and acceptance criteria are in plan.md (R20 section). Results go into `docs/HARDWARE.md`.

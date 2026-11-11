@@ -4,6 +4,11 @@ All notable changes to Drawplate are documented in this file.
 
 ## [Unreleased]
 
+Repair stages R01–R18 are complete on `main`. R19 (docs, honest status, release engineering) is in progress on branch `task/R19-docs`. R20 is owner-manual hardware acceptance.
+
+Historical phase notes below describe the original implementation sequence; treat PROGRESS.md as the authoritative status list.
+
+
 ### P0 - Baseline and repository
 - LICENSE (MIT), README.md stub, AGENTS.md, PROGRESS.md
 - docs/PROVENANCE.md, docs/VNEAT-BASELINE.md, docs/decisions/0001-ffmpeg-acquisition.md

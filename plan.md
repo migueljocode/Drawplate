@@ -1,6 +1,6 @@
 # Plan — R19 Documentation, honest status, release engineering
 
-**Status:** R18 merged to `main` @ `c240e2c` (PR #17). Main CI green. Installer CI last green on pre-merge tip `dd33b21` (run 43059860922). Actor executes **only** R19. Do not start R20. Do not edit product `src/` or installer scripts unless a doc test requires a trivial fix.
+**Status:** R18 merged to `main` @ `c240e2c` (PR #17). Main CI green. Installer CI last green on pre-merge tip `dd33b21` (run 43059860922). R19 implementation commits are on this branch (PR #19). Remaining: CI green + optional Job B review. Do not start R20. Do not edit product `src/` or installer scripts unless a doc test requires a trivial fix.
 
 This branch consolidates the two prior R19 attempts (`task/R19-docs` focused rewrite + `task/R19-docs-release-engineering` restoration of historical stage text).
 
@@ -22,7 +22,7 @@ PROGRESS.md on main still says R18 **IN PROGRESS**. Update it to **DONE** with t
 - MEDIUM: README options table must match `OptionTable` (covered by existing `ReadmeTests` if present; otherwise add a minimal check or document the gap as [U]).
 - LOW: Release workflow and Dependabot can be scaffolded or left as [U] if the owner prefers to delay tagging.
 
-## [ ] Step 1 — Mark R18 DONE in PROGRESS.md
+## [x] Step 1 — Mark R18 DONE in PROGRESS.md
 
 - Files: `PROGRESS.md`
 - Change: Replace the R18 “IN PROGRESS” block with a DONE entry that cites:
@@ -33,7 +33,7 @@ PROGRESS.md on main still says R18 **IN PROGRESS**. Update it to **DONE** with t
 - Risk: LOW
 - Confidence: HIGH
 
-## [ ] Step 2 — Honest PROGRESS.md for the whole repair series
+## [x] Step 2 — Honest PROGRESS.md for the whole repair series
 
 - Files: `PROGRESS.md`
 - Change:
@@ -45,7 +45,7 @@ PROGRESS.md on main still says R18 **IN PROGRESS**. Update it to **DONE** with t
 - Risk: LOW
 - Confidence: HIGH
 
-## [ ] Step 3 — README and core docs match reality
+## [x] Step 3 — README and core docs match reality
 
 - Files: `README.md`, `docs/FFMPEG.md`, `docs/MIGRATION.md`, `docs/PROVENANCE.md`, `docs/VNEAT-BASELINE.md`, `docs/HARDWARE.md` (leave the checklist empty for R20), any ADR under `docs/decisions/` that still claims unfinished work, `tests/Drawplate.Tests/Cli/ReadmeTests.cs` if present.
 - Tasks:
@@ -57,7 +57,7 @@ PROGRESS.md on main still says R18 **IN PROGRESS**. Update it to **DONE** with t
 - Risk: MEDIUM
 - Confidence: MEDIUM
 
-## [ ] Step 4 — Release engineering scaffold (optional if time-boxed)
+## [x] Step 4 — Release engineering scaffold (optional if time-boxed)
 
 - Files: `.github/workflows/release.yml` (if missing or incomplete), `.github/dependabot.yml`, `CHANGELOG.md`, `THIRD-PARTY-NOTICES.md`.
 - Tasks: make a dry-run-friendly release workflow that can produce the RID archives + SHA256SUMS when a tag is pushed; pin action SHAs; keep CHANGELOG honest (only what exists).
