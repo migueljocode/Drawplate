@@ -85,7 +85,7 @@ function Get-HttpFile([string]$Url, [string]$Destination) {
     $client.Timeout = [TimeSpan]::FromMinutes(30)
     try {
         $response = $client.GetAsync($Url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
-        $response.EnsureSuccessStatusCode()
+        [void]$response.EnsureSuccessStatusCode()
         $total = $response.Content.Headers.ContentLength
         $inputStream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
         $outputStream = [System.IO.File]::Create($Destination)
