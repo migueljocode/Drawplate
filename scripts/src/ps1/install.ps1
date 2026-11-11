@@ -47,8 +47,9 @@ function Get-LatestTag([string]$BaseUrl) {
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     }
     [System.Net.WebRequest]::DefaultWebProxy.Credentials = [System.Net.CredentialCache]::DefaultCredentials
-    $handler = New-Object System.Net.Http.HttpClientHandler
+    $handler = [System.Net.Http.HttpClientHandler]::new()
     $handler.AllowAutoRedirect = $false
+    $handler.DefaultProxyCredentials = [System.Net.CredentialCache]::DefaultCredentials
     $client = [System.Net.Http.HttpClient]::new($handler)
     $client.Timeout = [TimeSpan]::FromSeconds(30)
     try {
@@ -57,7 +58,7 @@ function Get-LatestTag([string]$BaseUrl) {
         if (-not $response.Headers.Location) {
             return ''
         }
-        $target = New-Object System.Uri([System.Uri]::new($BaseUrl + '/latest'), $response.Headers.Location)
+        $target = [System.Uri]::new([System.Uri]::new($BaseUrl + '/latest'), $response.Headers.Location)
         return [System.IO.Path]::GetFileName($target.AbsolutePath)
     }
     finally {
@@ -72,8 +73,9 @@ function Get-HttpFile([string]$Url, [string]$Destination) {
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     }
     [System.Net.WebRequest]::DefaultWebProxy.Credentials = [System.Net.CredentialCache]::DefaultCredentials
-    $handler = New-Object System.Net.Http.HttpClientHandler
-    $client = New-Object System.Net.Http.HttpClient($handler)
+    $handler = [System.Net.Http.HttpClientHandler]::new()
+    $handler.DefaultProxyCredentials = [System.Net.CredentialCache]::DefaultCredentials
+    $client = [System.Net.Http.HttpClient]::new($handler)
     $client.Timeout = [TimeSpan]::FromMinutes(30)
     try {
         $response = $client.GetAsync($Url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
@@ -82,7 +84,7 @@ function Get-HttpFile([string]$Url, [string]$Destination) {
         $inputStream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
         $outputStream = [System.IO.File]::Create($Destination)
         try {
-            $buffer = New-Object byte[] 81920
+            $buffer = [byte[]]::new(81920)
             [long]$received = 0
             $nextPercent = 25
             while (($read = $inputStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
@@ -113,23 +115,28 @@ function Get-HttpFile([string]$Url, [string]$Destination) {
 }
 
 function Test-ProgramVersion([string]$Path, [string]$Expected) {
-    $start = [System.Diagnostics.ProcessStartInfo]::new()
-    $start.FileName = $Path
-    $start.Arguments = '--version'
-    $start.UseShellExecute = $false
-    $start.RedirectStandardOutput = $true
-    $start.RedirectStandardError = $true
-    $process = [System.Diagnostics.Process]::new()
-    $process.StartInfo = $start
-    if (-not $process.Start()) {
+    try {
+        $start = [System.Diagnostics.ProcessStartInfo]::new()
+        $start.FileName = $Path
+        $start.Arguments = '--version'
+        $start.UseShellExecute = $false
+        $start.RedirectStandardOutput = $true
+        $start.RedirectStandardError = $true
+        $process = [System.Diagnostics.Process]::new()
+        $process.StartInfo = $start
+        if (-not $process.Start()) {
+            return $false
+        }
+        if (-not $process.WaitForExit(10000)) {
+            try { $process.Kill() } catch { Write-InstallerError 'The timed-out process could not be stopped.' 'Stop it manually before retrying.' }
+            return $false
+        }
+        $output = $process.StandardOutput.ReadToEnd().Trim()
+        return ($process.ExitCode -eq 0 -and $output -eq "drawplate $Expected")
+    }
+    catch {
         return $false
     }
-    if (-not $process.WaitForExit(10000)) {
-        try { $process.Kill() } catch { Write-InstallerError 'The timed-out process could not be stopped.' 'Stop it manually before retrying.' }
-        return $false
-    }
-    $output = $process.StandardOutput.ReadToEnd().Trim()
-    return ($process.ExitCode -eq 0 -and $output -eq "drawplate $Expected")
 }
 
 function Invoke-DrawplateInstall {
@@ -180,6 +187,8 @@ function Invoke-DrawplateInstall {
             }
             catch { Write-InstallerError 'The operation could not complete.' 'Check the error details and retry.' }
         }
+        Write-Ui '[1/4] Locating installation ..... [ok] done'
+        Write-Ui '[2/4] Removing files ............ [ok] done'
         Remove-Item -LiteralPath $binary -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath "$binary.old" -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $manifest -Force -ErrorAction SilentlyContinue
@@ -189,6 +198,14 @@ function Invoke-DrawplateInstall {
             if ($entry -and $entry.TrimEnd('\','/') -ne $binDir.TrimEnd('\','/')) { $kept += $entry }
         }
         [Environment]::SetEnvironmentVariable('Path', ($kept -join ';'), 'User')
+        Write-Ui '[3/4] Updating PATH ............. [ok] done'
+        if ((Test-Path -LiteralPath $binDir) -and -not (Get-ChildItem -LiteralPath $binDir -Force)) {
+            Remove-Item -LiteralPath $binDir -Force
+        }
+        if ((Test-Path -LiteralPath $dataDir) -and -not (Get-ChildItem -LiteralPath $dataDir -Force)) {
+            Remove-Item -LiteralPath $dataDir -Force
+        }
+        Write-Ui '[4/4] Finishing ................. [ok] done'
         Write-Ui 'Removed Drawplate. FFmpeg was not touched.'
         return 0
     }
@@ -203,6 +220,7 @@ function Invoke-DrawplateInstall {
     }
     $tag = $script:InstallerArguments.Version
     $pkgVersion = $tag.TrimStart('v')
+    Write-Ui "Drawplate installer $pkgVersion"
     $rid = 'win-x64'
     $archive = "drawplate-$pkgVersion-$rid.zip"
     $url = "$baseUrl/download/$tag/$archive"
@@ -219,6 +237,7 @@ function Invoke-DrawplateInstall {
     }
     New-Item -ItemType Directory -Path $lockDir -Force | Out-Null
     $staging = Join-Path $binDir ('.drawplate-staging-' + [Guid]::NewGuid().ToString('N'))
+    $repair = $false
     try {
         if ((Test-Path -LiteralPath $manifest) -and (Test-Path -LiteralPath $binary)) {
             $saved = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
@@ -233,6 +252,7 @@ function Invoke-DrawplateInstall {
                 Write-Ui '[8/8] Finishing .............. [ok] done'
                 return 0
             }
+            $repair = $true
         }
 
         New-Item -ItemType Directory -Path $binDir -Force | Out-Null
@@ -246,9 +266,15 @@ function Invoke-DrawplateInstall {
             $expectedHash = $script:InstallerArguments.Sha256.ToLowerInvariant()
         }
         else {
-            Get-HttpFile $url $archivePath
-            $sumsPath = Join-Path $staging 'SHA256SUMS'
-            Get-HttpFile "$baseUrl/download/$tag/SHA256SUMS" $sumsPath
+            try {
+                Get-HttpFile $url $archivePath
+                $sumsPath = Join-Path $staging 'SHA256SUMS'
+                Get-HttpFile "$baseUrl/download/$tag/SHA256SUMS" $sumsPath
+            }
+            catch {
+                Write-InstallerError "Download failed: $url ($($_.Exception.Message))." 'Retry, or download the archive yourself and use --from <archive> --sha256 <hash>.'
+                return 12
+            }
             $line = Get-Content -LiteralPath $sumsPath | Where-Object { $_ -match [regex]::Escape($archive) } | Select-Object -First 1
             if (-not $line) {
                 Write-InstallerError "Checksum mismatch for $archive." 'Nothing was installed. Retry; if it repeats, report it.'
@@ -302,7 +328,12 @@ function Invoke-DrawplateInstall {
         [System.IO.File]::WriteAllText($tempManifest, $manifestText, (New-Object System.Text.UTF8Encoding($false)))
         Move-Item -LiteralPath $tempManifest -Destination $manifest -Force
 
-        Write-Ui '[6/8] Installing ............. [ok] done'
+        if ($repair) {
+            Write-Ui '[6/8] Installing ............. [ok] repairing'
+        }
+        else {
+            Write-Ui '[6/8] Installing ............. [ok] done'
+        }
         Write-Ui '[7/8] Checking the install .... [ok] done'
         Write-Ui '[8/8] Finishing .............. [ok] done'
         Write-Ui ''
@@ -325,15 +356,18 @@ function Invoke-DrawplateInstall {
             [Environment]::SetEnvironmentVariable('Path', ($entries -join ';'), 'Process')
             Write-Ui "Your user PATH was updated. Open a new terminal to use 'drawplate'."
         }
-        if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -and -not $noSetup -and -not $yes -and -not [Console]::IsInputRedirected) {
+        $ffmpegMissing = -not (Get-Command ffmpeg -ErrorAction SilentlyContinue)
+        if ($ffmpegMissing) {
             Write-Ui 'FFmpeg was not found on this machine.'
-            $answer = Read-Host "Run 'drawplate setup' now? [Y/n]"
-            if ($answer -ne 'n' -and $answer -ne 'N') {
+            if ($yes) {
                 try { & $binary setup } catch { Write-InstallerError 'Could not run Drawplate setup.' 'Run drawplate setup manually.' }
             }
-        }
-        elseif ($yes) {
-            try { & $binary setup } catch { Write-InstallerError 'Could not run Drawplate setup.' 'Run drawplate setup manually.' }
+            elseif (-not $noSetup -and -not [Console]::IsInputRedirected) {
+                $answer = Read-Host "Run 'drawplate setup' now? [Y/n]"
+                if ($answer -ne 'n' -and $answer -ne 'N') {
+                    try { & $binary setup } catch { Write-InstallerError 'Could not run Drawplate setup.' 'Run drawplate setup manually.' }
+                }
+            }
         }
         return 0
     }

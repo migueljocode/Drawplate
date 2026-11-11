@@ -34,7 +34,14 @@ sha256_file() {
 }
 
 progress_complete() {
-    printf '%s\n' '      25%' '      50%' '      75%' '      100%'
+    file=$1
+    started=$2
+    printf '%s\n' '      25%' '      50%' '      75%'
+    bytes=$(wc -c < "$file" | tr -d ' ')
+    finished=$(date +%s)
+    elapsed=$((finished - started))
+    mib=$(awk -v value="$bytes" 'BEGIN { printf "%.1f", value / 1048576 }')
+    printf '      100%%  %s MiB in %ss\n' "$mib" "$elapsed"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -86,8 +93,11 @@ BINARY="$BIN_DIR/drawplate"
 MANIFEST="$DATA_DIR/install.json"
 
 if [ "$UNINSTALL" = "1" ]; then
+    printf '%s\n' '[1/4] Locating installation ..... [ok] done' '[2/4] Removing files ............ [ok] done'
     rm -f "$BINARY" "$BINARY.old" "$MANIFEST"
+    rmdir "$BIN_DIR" 2>/dev/null || true
     rmdir "$DATA_DIR" 2>/dev/null || true
+    printf '%s\n' '[3/4] Updating PATH ............. [ok] done' '[4/4] Finishing ................. [ok] done'
     printf '%s\n' "Removed Drawplate. FFmpeg was not touched."
     exit 0
 fi
@@ -99,6 +109,7 @@ fi
 [ -n "$VERSION" ] || error "Could not find a release for $REPO." "Check your internet connection, or set DRAWPLATE_VERSION." 12
 TAG=$VERSION
 PKG_VERSION=${TAG#v}
+printf 'Drawplate installer %s\n' "$PKG_VERSION"
 ARCHIVE="drawplate-$PKG_VERSION-$RID.tar.gz"
 URL="$BASE_URL/download/$TAG/$ARCHIVE"
 
@@ -122,6 +133,7 @@ STAGING_DIR="$BIN_DIR/.drawplate-staging-$$"
 trap 'rm -rf "$LOCK_DIR" "$STAGING_DIR"' EXIT
 trap 'rm -rf "$LOCK_DIR" "$STAGING_DIR"; exit 130' HUP INT TERM
 
+REPAIR=0
 if [ -f "$MANIFEST" ] && [ -f "$BINARY" ]; then
     MANIFEST_VERSION=$(sed -n 's/.*"version":"\([^"]*\)".*/\1/p' "$MANIFEST")
     MANIFEST_HASH=$(sed -n 's/.*"binarySha256":"\([^"]*\)".*/\1/p' "$MANIFEST")
@@ -134,25 +146,28 @@ if [ -f "$MANIFEST" ] && [ -f "$BINARY" ]; then
         case ":$PATH:" in *":$BIN_DIR:"*) ;; *) printf 'Note: %s is not on your PATH.\n' "$BIN_DIR" ;; esac
         exit 0
     fi
+    REPAIR=1
 fi
 
 mkdir -p "$STAGING_DIR" "$BIN_DIR"
 printf '%s\n' "[1/8] Detecting platform ..... [ok] $RID" "[2/8] Finding release ........ [ok] $TAG"
 printf '%s\n' '[3/8] Downloading Drawplate ....'
+DOWNLOAD_START=$(date +%s)
 if [ -n "$FROM_ARCHIVE" ]; then
     cp "$FROM_ARCHIVE" "$STAGING_DIR/$ARCHIVE" || error "Download failed: $FROM_ARCHIVE." "Check the offline archive path." 12
 else
     curl -fsSL -o "$STAGING_DIR/$ARCHIVE" "$URL" || error "Download failed: $URL." "Retry, or use --from <archive> --sha256 <hash>." 12
 fi
-progress_complete
+progress_complete "$STAGING_DIR/$ARCHIVE" "$DOWNLOAD_START"
 
 ACTUAL_HASH=$(sha256_file "$STAGING_DIR/$ARCHIVE")
 if [ -n "$FROM_ARCHIVE" ]; then
     EXPECTED_HASH=$FROM_SHA256
 else
     SUMS_URL="$BASE_URL/download/$TAG/SHA256SUMS"
+    SUMS_START=$(date +%s)
     curl -fsSL -o "$STAGING_DIR/SHA256SUMS" "$SUMS_URL" || error "Download failed: $SUMS_URL." "Retry." 12
-    progress_complete
+    progress_complete "$STAGING_DIR/SHA256SUMS" "$SUMS_START"
     EXPECTED_HASH=$(awk -v name="$ARCHIVE" '$2 == name { print $1; exit }' "$STAGING_DIR/SHA256SUMS")
 fi
 if [ -z "$EXPECTED_HASH" ] || [ "$EXPECTED_HASH" != "$ACTUAL_HASH" ]; then
@@ -187,7 +202,12 @@ MANIFEST_TMP="$MANIFEST.tmp.$$"
 printf '{"version":"%s","rid":"%s","archiveSha256":"%s","binarySha256":"%s","installedAt":"%s","path":"%s"}\n' "$PKG_VERSION" "$RID" "$ARCHIVE_HASH" "$BINARY_HASH" "$INSTALLED_AT" "$BINARY" > "$MANIFEST_TMP"
 mv -f "$MANIFEST_TMP" "$MANIFEST"
 
-printf '%s\n' '[6/8] Installing ............. [ok] done' '[7/8] Checking the install .... [ok] done' '[8/8] Finishing .............. [ok] done'
+if [ "$REPAIR" -eq 1 ]; then
+    printf '%s\n' '[6/8] Installing ............. [ok] repairing'
+else
+    printf '%s\n' '[6/8] Installing ............. [ok] done'
+fi
+printf '%s\n' '[7/8] Checking the install .... [ok] done' '[8/8] Finishing .............. [ok] done'
 printf '\nInstalled Drawplate %s to %s\n' "$PKG_VERSION" "$BINARY"
 printf '%s\n' 'Next:' '  drawplate --help' '  drawplate setup        (shows how to install FFmpeg)'
 case ":$PATH:" in *":$BIN_DIR:"*) ;; *) printf 'Note: %s is not on your PATH.\n' "$BIN_DIR" ;; esac
