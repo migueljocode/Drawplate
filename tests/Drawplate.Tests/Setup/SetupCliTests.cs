@@ -176,7 +176,7 @@ public sealed class SetupCliTests
         }
     }
 
-    private static async Task<CliResult> RunCliAsync(string[] arguments, IReadOnlyDictionary<string, string?>? environment = null)
+    private static async Task<CliResult> RunCliAsync(string[] arguments, Dictionary<string, string?>? environment = null)
     {
         var testDirectory = Path.GetDirectoryName(typeof(SetupCliTests).Assembly.Location)!;
         var assembly = Path.Combine(testDirectory, "drawplate.dll");
