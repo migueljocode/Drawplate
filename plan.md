@@ -2,6 +2,8 @@
 
 **Status:** R18 merged to `main` @ `c240e2c` (PR #17). Main CI green. Installer CI last green on pre-merge tip `dd33b21` (run 43059860922). Actor executes **only** R19. Do not start R20. Do not edit product `src/` or installer scripts unless a doc test requires a trivial fix.
 
+This branch consolidates the two prior R19 attempts (`task/R19-docs` focused rewrite + `task/R19-docs-release-engineering` restoration of historical stage text).
+
 ## CI snapshot (verified 2026-11-11)
 
 | Workflow | Result | Notes |
@@ -45,22 +47,21 @@ PROGRESS.md on main still says R18 **IN PROGRESS**. Update it to **DONE** with t
 
 ## [ ] Step 3 — README and core docs match reality
 
-- Files: `README.md`, `docs/FFMPEG.md`, `docs/MIGRATION.md`, `docs/PROVENANCE.md`, `docs/VNEAT-BASELINE.md`, `docs/HARDWARE.md` (leave the checklist empty for R20), any ADR under `docs/decisions/` that still claims unfinished work.
+- Files: `README.md`, `docs/FFMPEG.md`, `docs/MIGRATION.md`, `docs/PROVENANCE.md`, `docs/VNEAT-BASELINE.md`, `docs/HARDWARE.md` (leave the checklist empty for R20), any ADR under `docs/decisions/` that still claims unfinished work, `tests/Drawplate.Tests/Cli/ReadmeTests.cs` if present.
 - Tasks:
-  1. README: install one-liners point at the real `scripts/dist/` paths (or tag-pinned URLs once a release exists); options section does not invent flags; Troubleshooting FFmpeg has the 13 entries required by the original specification (or fewer if some were intentionally dropped—document the decision).
-  2. Remove every remaining reference to “section H.5 of plan.md” or other internal plan anchors that a user cannot follow.
-  3. `docs/HARDWARE.md` stays the empty template; do not invent results.
-  4. Any ADR that describes a spike that was never run is marked [U].
-- Acceptance: no document describes an unbuilt feature; no stub “TODO” left in user-facing docs.
-- Tests: existing `ReadmeTests` (if any) must stay green; do not weaken them.
-- Risk: MEDIUM (scope of “13 troubleshooting entries” may need owner clarification)
+  1. README: install one-liners point at the real `scripts/dist/` paths (or tag-pinned URLs once a release exists); options section does not invent flags; Troubleshooting FFmpeg has the entries required by the original specification (document any intentional omissions); remove references to internal plan anchors such as “section H.5 of plan.md”.
+  2. `VNEAT-BASELINE.md` = verified behavior notes (research report sections 5.2–5.4 and 6). If the source is unreachable, STOP and ask the owner.
+  3. ADRs that name spikes which were never run are marked [U].
+  4. `docs/HARDWARE.md` stays the empty template; do not invent results.
+- Acceptance: no document describes an unbuilt feature; no stub “TODO” left in user-facing docs; `ReadmeTests` (if any) stay green.
+- Risk: MEDIUM
 - Confidence: MEDIUM
 
 ## [ ] Step 4 — Release engineering scaffold (optional if time-boxed)
 
 - Files: `.github/workflows/release.yml` (if missing or incomplete), `.github/dependabot.yml`, `CHANGELOG.md`, `THIRD-PARTY-NOTICES.md`.
-- Tasks: make a dry-run-friendly release workflow that can produce the five RID archives + SHA256SUMS when a tag is pushed; pin action SHAs; keep CHANGELOG honest (only what exists).
-- Acceptance: a fork dry-run or `workflow_dispatch` produces the expected artifact names; or the gap is recorded as [U] in PROGRESS.md and this step is deferred.
+- Tasks: make a dry-run-friendly release workflow that can produce the RID archives + SHA256SUMS when a tag is pushed; pin action SHAs; keep CHANGELOG honest (only what exists).
+- Acceptance: a fork dry-run or `workflow_dispatch` produces the expected artifact names; **or** the gap is recorded as [U] in PROGRESS.md and this step is deferred.
 - Risk: MEDIUM
 - Confidence: MEDIUM
 
@@ -70,20 +71,29 @@ PROGRESS.md on main still says R18 **IN PROGRESS**. Update it to **DONE** with t
 - User-facing docs contain no false completion claims and no stubs that look finished.
 - Main CI remains green.
 - No product `src/` or installer behaviour change unless required by a doc test.
-- One logical commit per step (or a single well-described commit if the owner prefers); stop for Job B review.
+- One logical commit per step (or a single well-described commit); stop for Job B review.
 - Do **not** start R20 (owner hardware capture).
 
-## R20 (not in this plan — owner only)
+## R20 — Acceptance on the target machine (owner only; not in actor scope)
 
-R20 remains the manual target-machine acceptance stage:
+**Objective:** confirm hypotheses H1–H3 and sign off.  
+**Machine:** Ubuntu 26.04, i5-5200U, GeForce 820M, VAAPI working (owner statement).
 
-- Machine: Ubuntu 26.04, i5-5200U, GeForce 820M (VAAPI works per owner).
-- Owner runs the commands listed in the restored R20 section (ffmpeg version, vainfo, `drawplate -l` / `doctor` / verbose conversion, CPU-only, forced NVENC rejection, Ctrl-C, missing ffmpeg-path) and pastes results into `docs/HARDWARE.md` marked [V].
-- Actor may later open a tiny follow-up PR that only commits the filled HARDWARE.md and marks R20 DONE in PROGRESS.md.
+**Tasks (owner runs, pastes output into `docs/HARDWARE.md`; mark each result [V]):**
+
+1. `ffmpeg -version | head -1`; `vainfo | grep -i -E 'H264.*Enc'`.
+2. `drawplate -h`, `drawplate -V`, `drawplate -l` (expected: `vaapi` and `cpu`, no `nvenc`; `qsv` only if it truly works), `drawplate doctor`.
+3. `drawplate --verbose -q 50 <short clip>`: printed argv must contain `-vaapi_device /dev/dri/renderD…` and `format=nv12,hwupload`; output plays and is H.264/AAC.
+4. `drawplate -c <clip>` (no hardware probe, no note), `drawplate -e nvenc <clip>` (E-RUN-02, exit 1), Ctrl-C during a conversion (exit 130 within 5 s, no `.partial`).
+5. `drawplate` in a folder with 2 clips, and `drawplate --ffmpeg-path /nope -l` (E-FF-02, exit 3).
+6. If `-vaapi_device` is rejected by FFmpeg 8 (H3), STOP: owner approves a new stage adding the `-init_hw_device` variant.
+
+**Acceptance:** every step behaves as written; results committed to `docs/HARDWARE.md`; R20 marked DONE in PROGRESS.md.  
+**Depends:** R19.
 
 ## Execution notes
 
 - Scope = documentation + status honesty + optional release scaffold.
 - Prefer updating existing files over adding new ones.
-- If a required “13 troubleshooting entries” list cannot be reconstructed from the research report or message catalogue, STOP and ask the owner.
+- If a required troubleshooting list cannot be reconstructed, STOP and ask the owner.
 - Do not touch `scripts/src` or `scripts/dist` unless a regenerated dist is needed for a README path fix (unlikely).
