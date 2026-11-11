@@ -48,7 +48,7 @@ public sealed class MenuService
 
         EncoderKind? encoder = encoderIndex == 1 ? null : ordered[encoderIndex - 2];
 
-        var qualityChoice = _prompt.Ask("Quality", currentQuality.ToString(CultureInfo.InvariantCulture));
+        var qualityChoice = _prompt.Ask("Quality (1 to 100)", currentQuality.ToString(CultureInfo.InvariantCulture));
         var quality = currentQuality;
         if (!string.IsNullOrEmpty(qualityChoice)
             && (!int.TryParse(qualityChoice, NumberStyles.None, CultureInfo.InvariantCulture, out quality)
@@ -65,7 +65,7 @@ public sealed class MenuService
             SizeCap.Uhd4K => "4k",
             _ => "none",
         };
-        var sizeChoice = _prompt.Ask("Max size", currentSize);
+        var sizeChoice = _prompt.Ask("Max size (sd, hd, fullhd, 4k, none)", currentSize);
         if (!string.IsNullOrEmpty(sizeChoice) && !SizeCaps.TryParse(sizeChoice, out _))
         {
             return Invalid(new Message("E-MENU-02", $"Invalid max size '{sizeChoice}'.",
