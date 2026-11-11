@@ -1,99 +1,130 @@
-# Plan — R19 Documentation, honest status, release engineering
+# Plan — R20 Acceptance on the target machine
 
-**Status:** R18 merged to `main` @ `c240e2c` (PR #17). Main CI green. Installer CI last green on pre-merge tip `dd33b21` (run 43059860922). R19 implementation commits are on this branch (PR #19). Remaining: CI green + optional Job B review. Do not start R20. Do not edit product `src/` or installer scripts unless a doc test requires a trivial fix.
+**Status:** R01–R19 **DONE** on `main` @ `de0bb21`. Actor/owner executes **only** R20. Do not change product `src/`, installers, or CI unless a command in this plan fails for a code reason (then STOP and report).
 
-This branch consolidates the two prior R19 attempts (`task/R19-docs` focused rewrite + `task/R19-docs-release-engineering` restoration of historical stage text).
+## Context
 
-## CI snapshot (verified 2026-11-11)
+| Item | Value |
+|------|--------|
+| Machine | Ubuntu 26.04 LTS, Intel Core i5-5200U (iGPU), NVIDIA GeForce 820M (no NVENC) |
+| Expected | VAAPI works (owner statement); NVENC should not |
+| FFmpeg | Distro or user-installed; minimum 6.0 |
+| Evidence file | `docs/HARDWARE.md` (fill in; mark each result `[V]`) |
+| Status file | `PROGRESS.md` (mark R20 DONE when acceptance passes) |
 
-| Workflow | Result | Notes |
-|----------|--------|-------|
-| **CI** on main `c240e2c` [43062731366](https://github.com/migueljocode/Drawplate/actions/runs/43062731366) | **success** | Ubuntu, macOS, Windows green after R18 merge |
-| **Installer CI** on R18 tip `dd33b21` [43059860922](https://github.com/migueljocode/Drawplate/actions/runs/43059860922) | **success** | All jobs including both Windows shells; T-INS exit codes fixed |
+Hypotheses from the audit (still `[U]` until this stage):
 
-## R18 close-out (do this first)
-
-PROGRESS.md on main still says R18 **IN PROGRESS**. Update it to **DONE** with the two run links above and a one-line note that the Object[] exit-code fix landed in the merge.
+- **H1** — iGPU encodes through the standard VAAPI entry point.
+- **H2** — `h264_qsv` fails on this GPU.
+- **H3** — FFmpeg still accepts `-vaapi_device <node>` the way vneat used it (if rejected, STOP for a follow-up stage with `-init_hw_device`).
 
 ## Reviewer Briefing
 
-- HIGH: No document may claim a feature that is not present in `src/` or that was never verified.
-- HIGH: PROGRESS.md must use only [V]/[I]/[U] and must list R01–R20 with current results; remove every remaining “APPROVED” / “P0–P10 complete” claim that is not explicitly marked historical.
-- MEDIUM: README options table must match `OptionTable` (covered by existing `ReadmeTests` if present; otherwise add a minimal check or document the gap as [U]).
-- LOW: Release workflow and Dependabot can be scaffolded or left as [U] if the owner prefers to delay tagging.
+- HIGH: Every command output that is evidence must be pasted into `docs/HARDWARE.md` (or attached as fenced blocks). Do not invent results.
+- HIGH: Do not “fix” encoder profiles or argv on this branch unless H3 fails and the owner explicitly approves a new stage.
+- MEDIUM: Use a short real clip (a few seconds). Prefer a file already on the machine; otherwise generate one with lavfi.
+- LOW: If `drawplate` is not on PATH, install with the user-space installer from `main` or point at a local publish output.
 
-## [x] Step 1 — Mark R18 DONE in PROGRESS.md
+## Prerequisites
 
-- Files: `PROGRESS.md`
-- Change: Replace the R18 “IN PROGRESS” block with a DONE entry that cites:
-  - Main CI [43062731366](https://github.com/migueljocode/Drawplate/actions/runs/43062731366) on `c240e2c`
-  - Installer CI [43059860922](https://github.com/migueljocode/Drawplate/actions/runs/43059860922) on `dd33b21`
-  - One-sentence summary of the Object[] / exit-code fix.
-- Done when: PROGRESS.md no longer claims R18 is open.
-- Risk: LOW
-- Confidence: HIGH
+```bash
+# Binary available
+command -v drawplate || echo "install drawplate first (scripts/dist/install.sh or local publish)"
+drawplate -V
 
-## [x] Step 2 — Honest PROGRESS.md for the whole repair series
+# FFmpeg available
+ffmpeg -version | head -3
+command -v vainfo && vainfo 2>&1 | head -40 || echo "vainfo not installed (optional but useful)"
+```
 
-- Files: `PROGRESS.md`
-- Change:
-  1. Keep the historical “2026-11-05 All phases P0-P10 complete” line but keep the “superseded by repair stages R01–R20” note.
-  2. Ensure R01–R16, R17, R18 each have a clear Result line with [V] evidence where available.
-  3. Add R19 as **IN PROGRESS** (this plan) and R20 as **NOT STARTED** (owner manual).
-  4. Remove any leftover “APPROVED” language that is not inside a historical-claim paragraph.
-- Done when: a reader can tell at a glance which stages are closed and which are open.
-- Risk: LOW
-- Confidence: HIGH
+Generate a test clip if needed:
 
-## [x] Step 3 — README and core docs match reality
+```bash
+ffmpeg -y -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30:duration=2 \
+  -f lavfi -i sine=frequency=440:duration=2 -c:v libx264 -c:a aac -shortest /tmp/drawplate-r20.mp4
+CLIP=/tmp/drawplate-r20.mp4
+```
 
-- Files: `README.md`, `docs/FFMPEG.md`, `docs/MIGRATION.md`, `docs/PROVENANCE.md`, `docs/VNEAT-BASELINE.md`, `docs/HARDWARE.md` (leave the checklist empty for R20), any ADR under `docs/decisions/` that still claims unfinished work, `tests/Drawplate.Tests/Cli/ReadmeTests.cs` if present.
-- Tasks:
-  1. README: install one-liners point at the real `scripts/dist/` paths (or tag-pinned URLs once a release exists); options section does not invent flags; Troubleshooting FFmpeg has the entries required by the original specification (document any intentional omissions); remove references to internal plan anchors such as “section H.5 of plan.md”.
-  2. `VNEAT-BASELINE.md` = verified behavior notes (research report sections 5.2–5.4 and 6). If the source is unreachable, STOP and ask the owner.
-  3. ADRs that name spikes which were never run are marked [U].
-  4. `docs/HARDWARE.md` stays the empty template; do not invent results.
-- Acceptance: no document describes an unbuilt feature; no stub “TODO” left in user-facing docs; `ReadmeTests` (if any) stay green.
-- Risk: MEDIUM
-- Confidence: MEDIUM
+## [ ] Step 1 — Environment and doctor
 
-## [x] Step 4 — Release engineering scaffold (optional if time-boxed)
+- Commands:
+  ```bash
+  ffmpeg -version | head -1
+  vainfo 2>&1 | grep -i -E 'H264|VAProfile|Driver' || true
+  ls -l /dev/dri/ 2>/dev/null || true
+  drawplate -h | head -40
+  drawplate -V
+  drawplate -l
+  drawplate doctor
+  ```
+- Record in `docs/HARDWARE.md`: FFmpeg version, VAAPI / driver lines, `drawplate -l` output, full `doctor` output.
+- Expect: `vaapi` and `cpu` listed; `nvenc` absent or failing; `qsv` only if it truly works (H2).
 
-- Files: `.github/workflows/release.yml` (if missing or incomplete), `.github/dependabot.yml`, `CHANGELOG.md`, `THIRD-PARTY-NOTICES.md`.
-- Tasks: make a dry-run-friendly release workflow that can produce the RID archives + SHA256SUMS when a tag is pushed; pin action SHAs; keep CHANGELOG honest (only what exists).
-- Acceptance: a fork dry-run or `workflow_dispatch` produces the expected artifact names; **or** the gap is recorded as [U] in PROGRESS.md and this step is deferred.
-- Risk: MEDIUM
-- Confidence: MEDIUM
+## [ ] Step 2 — VAAPI conversion (verbose)
 
-## Global Definition of Done (R19)
+- Command:
+  ```bash
+  drawplate --verbose -q 50 -o /tmp/drawplate-r20-out "$CLIP"
+  ```
+- Acceptance:
+  - Exit 0 (or 1 only if a non-VAAPI issue is explained).
+  - Verbose argv contains `-vaapi_device /dev/dri/renderD…` and filter piece `format=nv12,hwupload` when VAAPI is selected.
+  - Output file plays and is H.264 + AAC (e.g. `ffprobe` or `ffmpeg -i` on the output).
+- If FFmpeg rejects `-vaapi_device` (H3 fails): **STOP**. Do not invent a new device API. Report the exact stderr; owner may approve a follow-up stage for `-init_hw_device`.
 
-- PROGRESS.md shows R18 DONE and R19 IN PROGRESS / DONE with evidence links.
-- User-facing docs contain no false completion claims and no stubs that look finished.
-- Main CI remains green.
-- No product `src/` or installer behaviour change unless required by a doc test.
-- One logical commit per step (or a single well-described commit); stop for Job B review.
-- Do **not** start R20 (owner hardware capture).
+## [ ] Step 3 — CPU force, bad encoder, cancellation
 
-## R20 — Acceptance on the target machine (owner only; not in actor scope)
+- Commands:
+  ```bash
+  drawplate -c -q 50 -o /tmp/drawplate-r20-cpu "$CLIP"          # no hardware probe required; no GPU note required
+  drawplate -e nvenc -o /tmp/drawplate-r20-nvenc "$CLIP" ; echo exit:$?   # expect E-RUN-02, exit 1
+  # Ctrl-C during a longer encode, or:
+  # start encode in background and kill -INT the drawplate PID — expect exit 130 within 5 s, no .partial left
+  ```
+- Record exit codes and whether any `.partial` remains.
 
-**Objective:** confirm hypotheses H1–H3 and sign off.  
-**Machine:** Ubuntu 26.04, i5-5200U, GeForce 820M, VAAPI working (owner statement).
+## [ ] Step 4 — Folder mode and missing FFmpeg path
 
-**Tasks (owner runs, pastes output into `docs/HARDWARE.md`; mark each result [V]):**
+- Commands:
+  ```bash
+  mkdir -p /tmp/drawplate-r20-folder
+  cp "$CLIP" /tmp/drawplate-r20-folder/a.mp4
+  cp "$CLIP" /tmp/drawplate-r20-folder/b.mp4
+  drawplate -i /tmp/drawplate-r20-folder -o /tmp/drawplate-r20-folder-out
+  drawplate --ffmpeg-path /nope -l ; echo exit:$?   # expect E-FF-02, exit 3
+  ```
+- Acceptance: both clips convert (or skip with clear reason on re-run); bad path exits 3 with E-FF-02.
 
-1. `ffmpeg -version | head -1`; `vainfo | grep -i -E 'H264.*Enc'`.
-2. `drawplate -h`, `drawplate -V`, `drawplate -l` (expected: `vaapi` and `cpu`, no `nvenc`; `qsv` only if it truly works), `drawplate doctor`.
-3. `drawplate --verbose -q 50 <short clip>`: printed argv must contain `-vaapi_device /dev/dri/renderD…` and `format=nv12,hwupload`; output plays and is H.264/AAC.
-4. `drawplate -c <clip>` (no hardware probe, no note), `drawplate -e nvenc <clip>` (E-RUN-02, exit 1), Ctrl-C during a conversion (exit 130 within 5 s, no `.partial`).
-5. `drawplate` in a folder with 2 clips, and `drawplate --ffmpeg-path /nope -l` (E-FF-02, exit 3).
-6. If `-vaapi_device` is rejected by FFmpeg 8 (H3), STOP: owner approves a new stage adding the `-init_hw_device` variant.
+## [ ] Step 5 — Write evidence and close R20
 
-**Acceptance:** every step behaves as written; results committed to `docs/HARDWARE.md`; R20 marked DONE in PROGRESS.md.  
-**Depends:** R19.
+- Files: `docs/HARDWARE.md`, `PROGRESS.md`
+- Update `docs/HARDWARE.md`:
+  - Fill the vendor table row(s) that apply (Intel / NVIDIA as observed).
+  - Add a dated section with command transcripts (trimmed is fine; keep argv lines and exit codes).
+  - Mark each verified claim `[V]`.
+- Update `PROGRESS.md`:
+  - R20 Result: **DONE** with date and a one-line summary (VAAPI yes/no, note behaviour, any H3 issue).
+  - Move hardware unknowns out of “Unverified” when resolved.
+- Commit message style: `docs(hardware): R20 acceptance on target machine`.
+- Do **not** start new feature work.
+
+## Global Definition of Done
+
+- All steps above executed on the real target machine (not CI).
+- `docs/HARDWARE.md` contains real output marked `[V]`.
+- `PROGRESS.md` shows R20 **DONE**.
+- Main CI remains green (docs-only commit).
+- If H3 fails: R20 stays open or is closed as “blocked on device API follow-up” with the stderr quoted — do not guess argv.
+
+## Out of scope
+
+- Changing encoder profiles, argv builders, or probes (unless owner opens a new stage after H3 failure).
+- Installing GPU drivers (user’s job).
+- Release tagging (optional after R20).
+- Dependabot PRs.
 
 ## Execution notes
 
-- Scope = documentation + status honesty + optional release scaffold.
-- Prefer updating existing files over adding new ones.
-- If a required troubleshooting list cannot be reconstructed, STOP and ask the owner.
-- Do not touch `scripts/src` or `scripts/dist` unless a regenerated dist is needed for a README path fix (unlikely).
+- Prefer a single docs commit (HARDWARE + PROGRESS).
+- Sanitize paths if the owner does not want home-directory layout public; keep device nodes and argv flags.
+- Agent without access to the target machine: prepare the `docs/HARDWARE.md` template sections and the exact command block for the owner, then STOP for owner paste-back.
