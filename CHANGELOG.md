@@ -4,7 +4,7 @@ All notable changes to Drawplate are documented in this file.
 
 ## [Unreleased]
 
-Repair stages R01–R18 are complete on `main`. R19 (docs, honest status, release engineering) is in progress on branch `task/R19-docs`. R20 is owner-manual hardware acceptance.
+Repair stages R01–R20 are complete on `main`; see PROGRESS.md for current status.
 
 Historical phase notes below describe the original implementation sequence; treat PROGRESS.md as the authoritative status list.
 
