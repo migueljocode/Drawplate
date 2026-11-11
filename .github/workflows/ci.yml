@@ -68,25 +68,67 @@ jobs:
           }
           Write-Output "::error title=Failing tests ($($failed.Count))::$($failed -join ' ;; ')"
 
-      - name: Publish
-        run: dotnet publish src/Drawplate.Console -c Release -r ${{ matrix.rid }} -o out
+      - name: Publish baseline (framework-dependent)
+        run: dotnet publish src/Drawplate.Console -c Release -r ${{ matrix.rid }} -p:PublishAot=false --self-contained false -p:Version=0.0.0-ci -o out-baseline
+
+      - name: Publish Native AOT
+        run: dotnet publish src/Drawplate.Console -c Release -r ${{ matrix.rid }} -p:Version=0.0.0-ci -o out
 
       - name: Verify binary version
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            actual="$(out/drawplate.exe --version)"
+          else
+            actual="$(out/drawplate --version)"
+          fi
+          test "$actual" = "drawplate 0.0.0-ci"
+
+      - name: Native AOT conversion smoke
+        shell: bash
+        run: |
+          mkdir -p smoke
+          ffmpeg -y -loglevel error -f lavfi -i testsrc2=size=320x240:rate=30:duration=1 -f lavfi -i sine=frequency=440:duration=1 -c:v libx264 -c:a aac -shortest smoke/input.mp4
+          cd smoke
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            ../out/drawplate.exe input.mp4
+          else
+            ../out/drawplate input.mp4
+          fi
+          test -s compressed/input.mp4
+
+      - name: Native AOT SIGTERM smoke (Unix)
         if: runner.os != 'Windows'
-        run: out/drawplate --version
+        shell: bash
+        run: |
+          mkdir -p signal-smoke
+          ffmpeg -y -loglevel error -f lavfi -i testsrc2=size=320x240:rate=30:duration=1 -c:v libx264 signal-smoke/input.mp4
+          cat > signal-smoke/slow-ffmpeg <<'EOF'
+          #!/bin/sh
+          sleep 30
+          EOF
+          chmod +x signal-smoke/slow-ffmpeg
+          cd signal-smoke
+          ../out/drawplate --ffmpeg-path "$PWD/slow-ffmpeg" input.mp4 >stdout.txt 2>stderr.txt &
+          pid=$!
+          sleep 1
+          kill -TERM "$pid"
+          set +e
+          wait "$pid"
+          status=$?
+          set -e
+          test "$status" -eq 130
 
-      - name: Verify binary version (Windows)
-        if: runner.os == 'Windows'
-        run: out\drawplate.exe --version
-
-      - name: Record binary size
+      - name: Record binary sizes
         shell: bash
         run: |
           if [ -f "out/drawplate" ]; then
-            SIZE=$(wc -c < out/drawplate)
-          elif [ -f "out/drawplate.exe" ]; then
-            SIZE=$(wc -c < out/drawplate.exe)
+            AOT_SIZE=$(wc -c < out/drawplate)
+            BASELINE_SIZE=$(wc -c < out-baseline/drawplate)
           else
-            SIZE=0
+            AOT_SIZE=$(wc -c < out/drawplate.exe)
+            BASELINE_SIZE=$(wc -c < out-baseline/drawplate.exe)
           fi
-          echo "## Binary size (${{ matrix.rid }}): $((SIZE / 1024)) KiB" >> $GITHUB_STEP_SUMMARY
+          echo "## Binary size (${{ matrix.rid }})" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Native AOT: $((AOT_SIZE / 1024)) KiB ($AOT_SIZE bytes)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Baseline: $((BASELINE_SIZE / 1024)) KiB ($BASELINE_SIZE bytes)" >> "$GITHUB_STEP_SUMMARY"

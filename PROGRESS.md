@@ -225,3 +225,11 @@ Result: IN PROGRESS.
 [V] CI run 42966012342: Ubuntu and Windows passed all checks (Ubuntu: 410 passed, 1 skipped; Windows: 404 passed, 7 skipped). macOS: 408 passed, 1 failed, 1 skipped; failure was the test regex matching unrelated metadata before the Video stream dimensions.
 [I] Anchored the dimension parser to FFmpeg's Video stream line; rerunning all three OS.
 [U] Remaining review: confirm the 14-row CLI matrix matches every applicable Part 3 row and the plan's missing-file check; R16 is not complete.
+
+
+### 2026-11-11 R17 Native AOT, CI smoke, size budget
+Result: IN PROGRESS.
+[I] Enabled Native-AOT publishing for the Console project while retaining size optimization and symbol stripping.
+[I] CI now publishes a framework-dependent baseline and a Native-AOT binary for each RID, checks the exact CI version, converts a generated one-second FFmpeg clip, and exercises SIGTERM on Unix. Per-RID sizes are written to the job summary.
+[U] Native-AOT warnings, ILCompiler output, conversion smoke, SIGTERM behavior, and actual binary sizes await the R17 CI run.
+[U] T1.6/S5 UI-library cost spike is not measured: this execution environment has no .NET SDK and cannot resolve external network hosts. ADR 0003 records the missing measurements explicitly; no UI package is added.

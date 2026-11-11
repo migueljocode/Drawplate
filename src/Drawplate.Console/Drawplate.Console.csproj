@@ -8,11 +8,12 @@
     <TrimmerSingleWarn>false</TrimmerSingleWarn>
     <StartupObject>Drawplate.Console.Program</StartupObject>
     <IsAotCompatible>true</IsAotCompatible>
+    <PublishAot>true</PublishAot>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Drawplate.Models\Drawplate.Models.csproj" />
-    <ProjectReference Include="..\Drawplate.Services\Drawplate.Services.csproj" />
+    <ProjectReference Include="..\\Drawplate.Models\\Drawplate.Models.csproj" />
+    <ProjectReference Include="..\\Drawplate.Services\\Drawplate.Services.csproj" />
   </ItemGroup>
 
 </Project>
