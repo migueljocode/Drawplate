@@ -18,9 +18,9 @@ using Drawplate.Models.Setup;
 using Drawplate.Services.Conversion;
 using Drawplate.Services.Ffmpeg;
 using Drawplate.Services.Interaction;
-using Drawplate.Services.Setup;
 using Drawplate.Services.Platform;
 using Drawplate.Services.Processes;
+using Drawplate.Services.Setup;
 
 namespace Drawplate.Console;
 
