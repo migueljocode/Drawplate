@@ -165,7 +165,6 @@ public sealed class AcquisitionFlow
             return Exit(0);
         }
 
-        await _stdout.WriteLineAsync("FFmpeg installed.").ConfigureAwait(false);
         return Found(candidate);
     }
 
