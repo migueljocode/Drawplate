@@ -78,6 +78,7 @@ def main():
     server.fault = args.fault
     server.requests_file = args.requests_file
     pathlib.Path(args.port_file).write_text(str(server.server_address[1]), encoding="ascii")
+    print(server.server_address[1], flush=True)
     try:
         server.serve_forever()
     finally:

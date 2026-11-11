@@ -119,6 +119,7 @@ Describe 'Drawplate installer contract' {
         $localAppData = Join-Path $script:temp 'home-badsums'
         $bin = Join-Path $localAppData 'Programs/Drawplate'
         $result = Run-Installer $server $localAppData $bin
+        Write-Host ('BAD SUMS URL: ' + $server.BaseUrl + ' OUT: ' + $result.Out + ' ERR: ' + $result.Err)
         $result.Code | Should -Be 13
         $result.Err | Should -Match 'Checksum mismatch'
         (Test-Path -LiteralPath (Join-Path $bin 'drawplate.exe')) | Should -BeFalse
@@ -129,6 +130,7 @@ Describe 'Drawplate installer contract' {
         $localAppData = Join-Path $script:temp 'home-truncate'
         $bin = Join-Path $localAppData 'Programs/Drawplate'
         $failed = Run-Installer $server $localAppData $bin
+        Write-Host ('TRUNCATE URL: ' + $server.BaseUrl + ' OUT: ' + $failed.Out + ' ERR: ' + $failed.Err)
         $failed.Code | Should -BeIn @(12, 13)
         (Test-Path -LiteralPath (Join-Path $bin 'drawplate.exe')) | Should -BeFalse
         Stop-ReleaseServer $server
@@ -148,6 +150,7 @@ Describe 'Drawplate installer contract' {
         [System.IO.File]::WriteAllText((Join-Path $folder 'SHA256SUMS'), ($hash + '  ' + $name + [Environment]::NewLine), (New-Object System.Text.UTF8Encoding($false)))
         $before = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $script:bin 'drawplate.exe')).Hash
         $result = Run-Installer $script:server $script:localAppData $script:bin 'v1.2.4'
+        Write-Host ('BAD BINARY OUT: ' + $result.Out + ' ERR: ' + $result.Err)
         $result.Code | Should -Be 14
         (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $script:bin 'drawplate.exe')).Hash | Should -Be $before
     }
@@ -193,6 +196,7 @@ Describe 'Drawplate installer contract' {
         $localAppData = Join-Path $script:temp 'home-latest'
         $bin = Join-Path $localAppData 'Programs/Drawplate'
         $result = Run-Installer $script:server $localAppData $bin -Latest
+        Write-Host ('LATEST URL: ' + $script:server.BaseUrl + ' OUT: ' + $result.Out + ' ERR: ' + $result.Err)
         $result.Code | Should -Be 0
         $result.Out | Should -Match 'Finding release.*v1.2.3'
     }

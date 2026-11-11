@@ -29,7 +29,13 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 function Write-Ui([string]$Text) {
-    [Console]::Out.WriteLine($Text)
+    if ([Console]::IsOutputRedirected) {
+        [Console]::Out.Write($Text)
+        [Console]::Out.Write([char]10)
+    }
+    else {
+        [Console]::Out.WriteLine($Text)
+    }
 }
 
 function Write-InstallerError([string]$Text, [string]$Hint) {
@@ -212,7 +218,7 @@ function Invoke-DrawplateInstall {
 
     if (-not $script:InstallerArguments.Version) {
         try { $script:InstallerArguments.Version = Get-LatestTag $baseUrl }
-        catch { $script:InstallerArguments.Version = '' }
+        catch { Write-InstallerError "Could not resolve the latest release ($($_.Exception.Message))." 'Set DRAWPLATE_VERSION to a known release tag and retry.'; $script:InstallerArguments.Version = '' }
     }
     if (-not $Version) {
         Write-InstallerError "Could not find a release for $repo." 'Check your internet connection, or set DRAWPLATE_VERSION.'
