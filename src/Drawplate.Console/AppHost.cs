@@ -339,6 +339,9 @@ internal static class AppHost
             var result = runner.RunAsync(file.Source, work.OutputFolder, chain, convert.Quality, convert.MaxSize, convert.NoTimestamps, vaapi, log, null, ct)
                 .GetAwaiter().GetResult();
 
+            // A signal kills ffmpeg, which the runner sees as an ordinary failed file. Stop here instead of reporting it (F23).
+            ct.ThrowIfCancellationRequested();
+
             switch (result.Status)
             {
                 case FileResultStatus.Converted:
