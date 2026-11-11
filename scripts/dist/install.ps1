@@ -27,13 +27,8 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 function Write-Ui([string]$Text) {
-    if ([Console]::IsOutputRedirected) {
-        [Console]::Out.Write($Text)
-        [Console]::Out.Write([char]10)
-    }
-    else {
-        [Console]::Out.WriteLine($Text)
-    }
+    [Console]::Out.Write($Text)
+    [Console]::Out.Write([char]10)
 }
 
 function Write-InstallerError([string]$Text, [string]$Hint) {
@@ -60,6 +55,8 @@ function Get-LatestTag([string]$BaseUrl) {
         $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Head, "$BaseUrl/latest")
         $response = $client.SendAsync($request).GetAwaiter().GetResult()
         if (-not $response.Headers.Location) {
+            $headerText = $response.Headers.ToString().Trim()
+            Write-InstallerError "Latest release endpoint returned HTTP $([int]$response.StatusCode) without a Location header ($headerText)." 'Check the release endpoint, or set DRAWPLATE_VERSION to a known tag.'
             return ''
         }
         $target = [System.Uri]::new([System.Uri]::new($BaseUrl + '/latest'), $response.Headers.Location)
@@ -386,7 +383,7 @@ function Invoke-DrawplateInstall {
 }
 
 $exitCode = Invoke-DrawplateInstall
-if ($PSCommandPath) {
+if ($MyInvocation.MyCommand.CommandType -eq [System.Management.Automation.CommandTypes]::ExternalScript -or $MyInvocation.MyCommand.Path) {
     exit $exitCode
 }
 $global:LASTEXITCODE = $exitCode
