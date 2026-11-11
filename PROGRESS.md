@@ -185,3 +185,11 @@ Result: DONE. CI run 42924235568 (f0af20c, before squash): ubuntu, macos, window
 [I] Numbered list N includes files skipped as `output already exists` or `already in the output folder`; W-01, W-02 and N-01 lines are unnumbered. Plan card `Files` counts the numbered files
 [I] VAAPI without a probed render node is skipped for that file and the next chain entry is tried; the Vaapi path is only exercised with FakeExe (no render node on CI): [U] on real hardware until R20
 [U] Not run: real FFmpeg conversion through the CLI (R16), cancellation (R13)
+
+### R13 Signals and cancellation
+Result: DONE. CI run 42928618632 (before this docs commit): ubuntu, macos, windows green; ubuntu and macOS `Passed: 332, Failed: 0, Skipped: 1`, windows `Passed: 327, Skipped: 6` (the 5 Unix-only signal tests skip there). PR #13
+[V] Tests (UnixFact, drawplate process signalled by PID only while a FakeExe conversion hangs): Sigterm_ToPidOnly_Exit130Within5s, Sigint_Exit130, Sighup_Exit130, Cancel_DeletesPartial, Cancel_NoChildLeft (pgrep for the unique temp folder). All pass on ubuntu and macOS
+[V] CI found a real bug on the first run: all signals gave exit 1 with empty stderr. A killed ffmpeg is an ordinary failed file for the runner, so the loop carried on and the host finished normally. Fixed in AppHost by re-checking the token after each file (`ThrowIfCancellationRequested`)
+[I] Deviation: new test helper file `tests/Drawplate.Tests/Cli/UnixFactAttribute.cs` (CA1034 forbids a nested attribute)
+[I] SIGQUIT is registered but has no test; the plan's test list has none
+[U] Windows: Ctrl-C and Ctrl-Break delivery is not tested (signal tests skip there). Needs the R17 CI work or a manual check
