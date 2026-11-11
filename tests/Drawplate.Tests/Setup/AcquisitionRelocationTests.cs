@@ -18,6 +18,48 @@ public sealed partial class AcquisitionFlowTests
 {
     [Fact]
     [Trait("Tier", "T1")]
+    public async Task Interactive_Yes_InstallOk_Found()
+    {
+        var script = FakeExeHarness.WriteScript([
+            "{\"if\":\"-version\",\"stdout\":\"ffmpeg version 6.1.1\\n\"}",
+            "{\"if\":\"-encoders\",\"stdout\":\" V..... libx264\\n\"}",
+            "{\"exit\":0}"
+        ]);
+        var wrapper = FakeExeHarness.CreateWrapper();
+        Environment.SetEnvironmentVariable("FAKE_EXE_SCRIPT", script);
+        try
+        {
+            var candidate = new FfmpegCandidate(wrapper, FfmpegSource.KnownFolder);
+            var locateCalls = 0;
+            var locator = new Func<string?, FfmpegCandidate?>(_ => ++locateCalls == 1 ? null : candidate);
+            var prompt = new TestPrompt(true, true);
+            var launcher = new StubLauncher(0);
+            var (flow, _, _) = CreateFlow(
+                prompt,
+                null,
+                OperatingSystemKind.MacOS,
+                locator,
+                launcher,
+                ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "brew"));
+
+            var outcome = await flow.RunAsync(AcquisitionMode.Convert, false, false, null, CancellationToken.None).ConfigureAwait(true);
+
+            Assert.Equal(AcquisitionStatus.Found, outcome.Status);
+            Assert.Equal(candidate, outcome.Candidate);
+            Assert.Equal(1, prompt.ConfirmCalls);
+            Assert.Equal(2, locateCalls);
+            Assert.Equal("brew", launcher.Executable);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("FAKE_EXE_SCRIPT", null);
+            File.Delete(script);
+            File.Delete(wrapper);
+        }
+    }
+
+    [Fact]
+    [Trait("Tier", "T1")]
     public async Task Acquisition_AfterInstall_RelocatesInKnownFolders()
     {
         var script = FakeExeHarness.WriteScript([
