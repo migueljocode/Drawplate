@@ -202,3 +202,11 @@ Result: DONE.
 [I] Wired `setup`, `doctor`, `-y`, `-n`, and `-m` into AppHost. `-y` is setup-only and exits after setup; interactive mode probes all available encoders, lets menu choices override pinned options, and runs the menu before input planning.
 [I] Added acquisition, relocation, doctor, menu, setup CLI, and no-elevation acceptance tests. Locator and ffprobe seams make the failure and optional-dependency cases deterministic.
 [V] CI run 42959324706 (commit 220ba83): Ubuntu, macOS and Windows build, format, test, publish, and binary verification all passed.
+
+### 2026-11-11 R15 Terminal behavior: theme and live progress
+Result: DONE.
+[I] Added terminal detection, NO_COLOR/TERM handling, UTF-8 glyph selection, ASCII fallback, and two-line live progress throttled through an injected TimeProvider. Piped output uses the plain renderer without redraws; TERM=dumb disables cursor redraw.
+[V] `dotnet build src/Drawplate.slnx -c Release` -> 0 Warning(s), 0 Error(s) on Ubuntu, macOS and Windows (CI run [42961067159](https://github.com/migueljocode/Drawplate/actions/runs/42961067159)).
+[V] `dotnet format src/Drawplate.slnx --verify-no-changes` -> exit 0 on all three OS (same CI run).
+[V] `dotnet test tests/Drawplate.Tests -c Release` -> Ubuntu/macOS: 371 passed, 1 skipped, 0 failed; Windows: 366 passed, 6 skipped, 0 failed (same CI run).
+[V] Publish and binary version verification passed on all three OS (same CI run).
