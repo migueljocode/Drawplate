@@ -20,6 +20,7 @@ namespace Drawplate.Tests.Setup;
 [Collection("FakeExe")]
 public sealed partial class AcquisitionFlowTests
 {
+    private static readonly string[] ExpectedWingetArguments = ["install", "--id", "Gyan.FFmpeg", "-e", "--accept-package-agreements", "--accept-source-agreements"];
     [Fact]
     [Trait("Tier", "T1")]
     public async Task Acquisition_NoFfmpegPathArgument_DoesNotThrow()
@@ -127,7 +128,7 @@ public sealed partial class AcquisitionFlowTests
             Assert.Equal(candidate, outcome.Candidate);
             Assert.Equal(0, prompt.ConfirmCalls);
             Assert.Equal("winget", launcher.Executable);
-            Assert.Equal(new[] { "install", "--id", "Gyan.FFmpeg", "-e", "--accept-package-agreements", "--accept-source-agreements" }, launcher.Arguments);
+            Assert.Equal(ExpectedWingetArguments, launcher.Arguments);
             Assert.True(launcher.Options!.InheritConsole);
         }
         finally
