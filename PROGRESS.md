@@ -35,11 +35,10 @@ Result: **DONE** (merged to main via PR #19 @ `436c5a0`).
 [U] Spike ADRs beyond 0003 (process/cancellation, etc.) not backfilled; recorded only if evidence exists.
 
 ### R20 Acceptance on the target machine
-Result: **NOT STARTED** (owner manual). Commands and acceptance criteria are in plan.md (R20 section). Results go into `docs/HARDWARE.md`.
+Result: **DONE** (2026-11-11) — VAAPI works on this Ubuntu 26.04 Intel iGPU target; `drawplate -l` reports `vaapi` and `cpu`, a real encode uses `-vaapi_device /dev/dri/renderD128` with `format=nv12,hwupload`, and `ffprobe` confirms the output is H.264 + AAC. `drawplate -e nvenc` exits 1 with `Encoder 'nvenc' is not working on this machine.`, a SIGINT during a long encode exits 130 with no `.partial` files, and `drawplate --ffmpeg-path /nope -l` exits 3. H3 did not fail on this machine.
 
 ## Unverified
 
-- Real VAAPI / hardware encoder behaviour on the owner’s Ubuntu 26.04 + i5-5200U + GeForce 820M machine (R20).
 - Native-AOT + Spectre.Console size/startup spike (ADR 0003).
 - Windows/macOS behaviour beyond what CI logs show for hardware encoders.
 
@@ -53,5 +52,4 @@ None.
 - 2026-11-11: Single R19 branch is `task/R19-docs`; prior `task/R19-docs-release-engineering` closed/deleted.
 
 ## Deferred
-- R20 owner hardware capture.
 - Optional release.yml / Dependabot / CHANGELOG polish if not finished inside R19.
