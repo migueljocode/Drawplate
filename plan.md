@@ -398,6 +398,18 @@ Observed: `./drawplate --help` and `./drawplate` die with `Unhandled exception. 
 - **Acceptance:** G.4 acceptance list; `installers.yml` green; README one-liners (updated in R19) point at files that exist in the tagged tree.
 - **Tests:** `scripts/tests/*`. **Depends:** R17.
 
+#### R18 status and repair steps (2026-11-11)
+
+- **State [V]:** PR #17 (`task/R18-installer-scripts`, head `a5f282e`). `CI` green; `Installer CI` jobs `shell-ubuntu`, `shell-macos`, `generated-up-to-date` green; `windows-powershell-51` and `windows-pwsh-7` red at "Run Pester tests": T-INS-04, T-INS-05, T-INS-06 fail on both. Cause [U]: job logs not yet read.
+- **Steps (do in order, R18 only; do not start R19):**
+  1. Read the failing Pester output (job logs or `Invoke-Pester scripts/tests/ps1/install.Tests.ps1`) and record the exact error of each failing test before changing code.
+  2. Find the shared cause in `scripts/src/ps1/install.ps1` and the Pester helpers. Check: exit code propagation (G.5: `Invoke-DrawplateInstall` returns the code; `$global:LASTEXITCODE` when piped); expected codes (13 checksum mismatch, 12 or 13 cut download, 14 bad binary with I-006); cleanup (no staging folder left, `.old` restored); `serve_release.py` fault modes (`badsums`, `truncate`) and how the server is started and stopped on Windows.
+  3. Fix the cause, not the test. No weakened assertions, no suppressions (AGENTS.md rules 4 and 5). Keep ASCII only and none of the G.5 forbidden constructs.
+  4. Regenerate with `scripts/build-installers.ps1`, commit `scripts/dist`, confirm `generated-up-to-date` stays green.
+  5. Check G.4 T-INS-01 to T-INS-12 against CI; all five Installer CI jobs green; PSScriptAnalyzer compatibility rules (T8.5) clean.
+  6. Update `PROGRESS.md` R18: replace "await the R18 CI run" with the real run link and results labelled [V]/[I]/[U]; list extra test files (`progress.Tests.ps1`, `progress.sh`) as deviations.
+  7. One commit (C.9), report in REPORT FORMAT, STOP.
+
 ### R19 Documentation, release engineering, honest status
 
 - **Objective:** documents match reality; a tag produces verified artifacts. **Evidence:** B26, B27. Specification: sections H and I.6; old T10.1 to T10.7.
