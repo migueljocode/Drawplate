@@ -73,7 +73,7 @@ public sealed class DoctorService
                 {
                     Lines = lines.ToImmutable(),
                     ExitCode = 3,
-                    Error = Messages.E_FF_07(candidate.Path, tooOld.Version.ToString())
+                    Error = Messages.E_FF_07(tooOld.Version.ToString(), _platform.Os)
                 };
             }
 
