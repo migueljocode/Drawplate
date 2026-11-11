@@ -42,7 +42,7 @@ public sealed partial class AcquisitionFlowTests
                 launcher,
                 ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "winget"));
 
-            var outcome = await flow.RunAsync(AcquisitionMode.SetupCommand, false, false, null, CancellationToken.None);
+            var outcome = await flow.RunAsync(AcquisitionMode.SetupCommand, false, false, null, CancellationToken.None).ConfigureAwait(true);
 
             Assert.Equal(AcquisitionStatus.Exit, outcome.Status);
             Assert.Equal(0, outcome.ExitCode);
