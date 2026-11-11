@@ -8,6 +8,7 @@ on:
 jobs:
   build-test-publish:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -36,17 +37,13 @@ jobs:
       - name: Verify formatting
         run: dotnet format src/Drawplate.slnx --verify-no-changes
 
-      - name: Install FFmpeg (ubuntu)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update -y && sudo apt-get install -y ffmpeg
-
-      - name: Install FFmpeg (macOS)
-        if: runner.os == 'macOS'
-        run: brew install ffmpeg
-
-      - name: Install FFmpeg (Windows)
-        if: runner.os == 'Windows'
-        run: choco install ffmpeg -y
+      # Static binaries + tool cache. Avoids apt-get hang on ubuntu-latest
+      # (full ffmpeg dependency tree + mirror stalls can exceed 20 min).
+      - name: Setup FFmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
+        with:
+          ffmpeg-version: release
+          github-token: ${{ github.token }}
 
       - name: Test
         run: dotnet test tests/Drawplate.Tests -c Release --logger "trx;LogFileName=results.trx" --results-directory TestResults
