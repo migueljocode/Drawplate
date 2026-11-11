@@ -53,7 +53,10 @@ public sealed class SetupCliTests
     [Trait("Tier", "T1")]
     public async Task Cli_Convert_Missing_NonInteractive_Exit3()
     {
-        var source = Path.GetTempFileName();
+        var folder = Path.Combine(Path.GetTempPath(), "drawplate-setup-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        var source = Path.Combine(folder, "clip.mp4");
+        File.WriteAllText(source, "fixture");
         var missing = Path.Combine(Path.GetTempPath(), "missing-ffmpeg-" + Guid.NewGuid().ToString("N"));
         try
         {
@@ -64,7 +67,7 @@ public sealed class SetupCliTests
         }
         finally
         {
-            File.Delete(source);
+            Directory.Delete(folder, recursive: true);
         }
     }
 
