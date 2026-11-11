@@ -1,0 +1,149 @@
+name: Release
+
+# Manual only: Actions → Release → Run workflow (from main).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag, e.g. v1.0.0"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark as pre-release"
+        type: boolean
+        default: false
+      dry_run:
+        description: "Build and package only; do not publish a GitHub release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: validate
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check tag format and availability
+        env:
+          TAG: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::version must look like v1.2.3 or v1.2.3-rc.1 (got '$TAG')"
+            exit 1
+          fi
+          if [ "$DRY_RUN" != "true" ] && gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::release $TAG already exists"
+            exit 1
+          fi
+
+  build:
+    name: build (${{ matrix.rid }})
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { os: ubuntu-latest, rid: linux-x64 }
+          - { os: ubuntu-24.04-arm, rid: linux-arm64 }
+          - { os: macos-latest, rid: osx-arm64 }
+          - { os: windows-latest, rid: win-x64 }
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d # v5.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Publish Native AOT
+        run: >
+          dotnet publish src/Drawplate.Console -c Release -r ${{ matrix.rid }}
+          -p:Version=${{ inputs.version }}
+          -o publish
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then bin=./publish/drawplate.exe; else bin=./publish/drawplate; fi
+          "$bin" --version
+          "$bin" --help > /dev/null
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          tar -czf "dist/drawplate-${{ inputs.version }}-${{ matrix.rid }}.tar.gz" \
+            -C publish drawplate
+          cp LICENSE dist/ 2>/dev/null || true
+          cp THIRD-PARTY-NOTICES.md dist/ 2>/dev/null || true
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Compress-Archive -Path publish/drawplate.exe -DestinationPath "dist/drawplate-${{ inputs.version }}-${{ matrix.rid }}.zip"
+          if (Test-Path LICENSE) { Copy-Item LICENSE dist/ }
+          if (Test-Path THIRD-PARTY-NOTICES.md) { Copy-Item THIRD-PARTY-NOTICES.md dist/ }
+
+      - name: Report binary size
+        shell: bash
+        run: ls -la publish/drawplate* dist/ || true
+
+      - name: Upload package
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: drawplate-${{ matrix.rid }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: publish release
+    needs: build
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout (for notes files)
+        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+
+      - name: Download packages
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: drawplate-*
+          path: dist
+          merge-multiple: true
+
+      - name: SHA256SUMS
+        working-directory: dist
+        run: |
+          find . -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          args=(release create "$TAG" dist/* --title "$TAG" --generate-notes)
+          if [ "$PRERELEASE" = "true" ]; then args+=(--prerelease); fi
+          gh "${args[@]}"

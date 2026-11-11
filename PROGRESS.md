@@ -3,15 +3,15 @@
 ## Verified
 
 ### 2026-11-05 All phases P0-P10 complete
-Result: DONE (historical claim; superseded by repair stages R01–R20)
+Result: DONE (historical claim only; superseded by repair stages R01–R20). The original “APPROVED” / complete language written inside implementing commits is not authoritative.
 
 ## Repair stages (plan.md Part 4)
 
 ### R01–R16
-Result: DONE (see prior entries on main / earlier task branches).
+Result: **DONE** (see prior entries on main / earlier task branches).
 
 ### 2026-11-11 R17 Native AOT, CI smoke, size budget
-Result: **DONE** (owner direction 2026-11-11: treat as complete; forgotten mark fixed here).
+Result: **DONE** (owner direction 2026-11-11: treat as complete).
 [V] CI run https://github.com/migueljocode/Drawplate/actions/runs/43000273712 — Ubuntu, macOS and Windows all green.
 [V] Native-AOT publish and framework-dependent baseline for linux-x64, osx-arm64, win-x64; no publish warnings treated as errors.
 [V] Exact version check, one-second FFmpeg conversion smoke, Unix SIGTERM exit-130 smoke passed.
@@ -19,22 +19,39 @@ Result: **DONE** (owner direction 2026-11-11: treat as complete; forgotten mark 
 [U] T1.6/S5 UI-library cost spike unmeasured (no SDK in authoring environment); ADR 0003 records the limit; no UI package added.
 
 ### 2026-11-11 R18 Installer scripts
-Result: **IN PROGRESS** (focused plan rewritten on this branch).
-[V] Generator copies single-file sources; dist present; Ubuntu/macOS Installer CI green.
-[V] Prior Installer CI run https://github.com/migueljocode/Drawplate/actions/runs/43005858724 — Windows shells failed only T-INS-04/05/06 (exit 0 instead of 13/12-or-13/14).
-[V] Step 1 reproduction on Installer CI run [43055606701](https://github.com/migueljocode/Drawplate/actions/runs/43055606701): all three cases are launched by the Pester helper with PowerShell `-File` and captured through `System.Diagnostics.Process.ExitCode`; observed exit code is 0 for T-INS-04 (expected 13), T-INS-05 (expected 12/13), and T-INS-06 (expected 14), on both PowerShell 5.1 and 7. Logs show the intended checksum rejection, truncated-response rejection and previous-binary restoration messages. Cleanup checks were previously after the failing code assertion, so their state was not observable; moved them before code assertions and added explicit diagnostics.
-[I] Step 2 makes process termination explicit via `[Environment]::Exit`, while retaining `$PSCommandPath` and `$MyInvocation.MyCommand.Path` as file-execution detection and `$global:LASTEXITCODE` for interactive/piped use.
-[I] Repair implementation and reordered diagnostics committed in 72388b4; awaiting Installer CI and general CI on the updated branch tip.
-[U] Final green Installer CI run required before marking R18 DONE.
+Result: **DONE** (merged to main @ `c240e2c`, PR #17).
+[V] Main CI https://github.com/migueljocode/Drawplate/actions/runs/43062731366 on `c240e2c` — Ubuntu, macOS, Windows green.
+[V] Installer CI https://github.com/migueljocode/Drawplate/actions/runs/43059860922 on R18 tip `dd33b21` — all jobs including both Windows shells; T-INS exit codes fixed.
+[V] Root cause of Windows exit 1 was `Invoke-DrawplateInstall` emitting `System.Object[]` (HttpResponseMessage from `EnsureSuccessStatusCode`); fixed with `[void]` so the function returns a single int.
 
+### 2026-11-11 R19 Documentation, honest status, release engineering
+Result: **IN PROGRESS** (branch `task/R19-docs`; see plan.md / PR #19).
+[V] R18 close-out written in this file.
+[V] README: options table, 13-entry Troubleshooting FFmpeg section, no internal plan anchors.
+[V] ADR 0002 (project name Drawplate) added; ADR 0001 and 0003 retained (0003 still [U] on measurements).
+[V] `.github/workflows/release.yml` (manual dispatch, dry-run, linux-x64/arm64, osx-arm64, win-x64) and `.github/dependabot.yml` added.
+[V] CHANGELOG.md annotated that PROGRESS.md is authoritative for repair-stage status.
+[U] End-to-end dry-run of release.yml on a fork not executed in this session; first real tag is the verification.
+[U] Spike ADRs beyond 0003 (process/cancellation, etc.) not backfilled; recorded only if evidence exists.
 
-[V] Step 2 traced the Windows `System.Object[]` exit failure to `$response.EnsureSuccessStatusCode()` emitting its returned `HttpResponseMessage` from `Get-HttpFile`; suppressed that non-contract output with `[void]` in source and generated distribution. Awaiting both Windows-shell verification.
+### R20 Acceptance on the target machine
+Result: **NOT STARTED** (owner manual). Commands and acceptance criteria are in plan.md (R20 section). Results go into `docs/HARDWARE.md`.
 
 ## Unverified
 
+- Real VAAPI / hardware encoder behaviour on the owner’s Ubuntu 26.04 + i5-5200U + GeForce 820M machine (R20).
+- Native-AOT + Spectre.Console size/startup spike (ADR 0003).
+- Windows/macOS behaviour beyond what CI logs show for hardware encoders.
+
 ## Blocked
 
+None.
+
 ## Decisions
-- 2026-11-11: Owner treats R17 as DONE; agent proceeds with R18 only.
+- 2026-11-11: Owner treats R17 as DONE; agent proceeded with R18 only.
+- 2026-11-11: R18 marked DONE from CI evidence (runs linked above).
+- 2026-11-11: Single R19 branch is `task/R19-docs`; prior `task/R19-docs-release-engineering` closed/deleted.
 
 ## Deferred
+- R20 owner hardware capture.
+- Optional release.yml / Dependabot / CHANGELOG polish if not finished inside R19.
