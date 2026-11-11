@@ -73,6 +73,32 @@ public sealed class SetupCliTests
 
     [Fact]
     [Trait("Tier", "T1")]
+    public async Task Cli_Y_FfmpegPresent_ExitsWithoutConverting()
+    {
+        var script = FakeExeHarness.WriteScript([
+            "{\"if\":\"-version\",\"stdout\":\"ffmpeg version 6.1.1\\n\"}",
+            "{\"if\":\"-encoders\",\"stdout\":\" V..... libx264\\n\"}",
+            "{\"exit\":0}"
+        ]);
+        var wrapper = FakeExeHarness.CreateWrapper();
+        Environment.SetEnvironmentVariable("FAKE_EXE_SCRIPT", script);
+        try
+        {
+            var result = await RunCliAsync(["-y", "--ffmpeg-path", wrapper]).ConfigureAwait(true);
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.Equal("FFmpeg is already installed." + Environment.NewLine, result.Stdout);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("FAKE_EXE_SCRIPT", null);
+            File.Delete(script);
+            File.Delete(wrapper);
+        }
+    }
+
+    [Fact]
+    [Trait("Tier", "T1")]
     public async Task Cli_Menu_NonInteractive_Exit2()
     {
         var result = await RunCliAsync(["-m"]).ConfigureAwait(true);
