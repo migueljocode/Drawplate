@@ -7,6 +7,14 @@ import time
 import urllib.parse
 
 
+class LocalHTTPServer(http.server.HTTPServer):
+    def server_bind(self):
+        self.socket.bind(self.server_address)
+        self.server_address = self.socket.getsockname()
+        self.server_name = "localhost"
+        self.server_port = self.server_address[1]
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, _format, *_args):
         return
@@ -75,7 +83,7 @@ def main():
     parser.add_argument("--requests-file", default="")
     args = parser.parse_args()
     print("arguments-parsed", flush=True)
-    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    server = LocalHTTPServer(("127.0.0.1", 0), Handler)
     print("server-bound", flush=True)
     server.root = pathlib.Path(args.root).resolve()
     server.fault = args.fault
