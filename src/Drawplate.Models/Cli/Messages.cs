@@ -71,9 +71,6 @@ public static class Messages
 
     public static string N_VERSION(string version) => $"drawplate {version}";
 
-    public static Message E_TEMP_01() =>
-        new("E-TEMP-01", "This option is not available yet.", null, 2);
-
     public static Message E_FF_02(string path, string reason) =>
         new("E-FF-02", $"FFmpeg at {path} could not be run ({reason}).", "Reinstall it, or choose another with --ffmpeg-path.", 3);
 
