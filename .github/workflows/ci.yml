@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # tag v4.2.1
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d # tag v5.0.0
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # tag v6.1.0
         with:
           global-json-file: global.json
 
