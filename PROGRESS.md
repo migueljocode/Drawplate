@@ -24,6 +24,7 @@ Result: **IN PROGRESS** (focused plan rewritten on this branch).
 [V] Prior Installer CI run https://github.com/migueljocode/Drawplate/actions/runs/43005858724 — Windows shells failed only T-INS-04/05/06 (exit 0 instead of 13/12-or-13/14).
 [V] Step 1 reproduction on Installer CI run [43055606701](https://github.com/migueljocode/Drawplate/actions/runs/43055606701): all three cases are launched by the Pester helper with PowerShell `-File` and captured through `System.Diagnostics.Process.ExitCode`; observed exit code is 0 for T-INS-04 (expected 13), T-INS-05 (expected 12/13), and T-INS-06 (expected 14), on both PowerShell 5.1 and 7. Logs show the intended checksum rejection, truncated-response rejection and previous-binary restoration messages. Cleanup checks were previously after the failing code assertion, so their state was not observable; moved them before code assertions and added explicit diagnostics.
 [I] Step 2 makes process termination explicit via `[Environment]::Exit`, while retaining `$PSCommandPath` and `$MyInvocation.MyCommand.Path` as file-execution detection and `$global:LASTEXITCODE` for interactive/piped use.
+[I] Repair implementation and reordered diagnostics committed in 72388b4; awaiting Installer CI and general CI on the updated branch tip.
 [U] Final green Installer CI run required before marking R18 DONE.
 
 ## Unverified
