@@ -198,9 +198,9 @@ Result: DONE. CI run 42928618632 (before this docs commit): ubuntu, macos, windo
 ### R14 Setup, doctor, interactive menu, install flags
 Result: IN PROGRESS.
 [I] Implemented the acquisition flow with nullable FFmpeg path handling, injected output writers, platform install guidance, and post-install relocation/revalidation.
-[I] Implemented asynchronous doctor diagnostics for FFmpeg source/version, libx264, optional ffprobe, working encoders, and hardware notes. Doctor now exits 3 when neither libx264 nor a hardware encoder is usable.
-[I] Wired `setup`, `doctor`, `-y`, `-n`, and `-m` into AppHost; added the no-elevation source guard.
-[I] Added Setup acceptance coverage: `AcquisitionFlowTests`, `DoctorTests`, `MenuTests`, and `SetupCliTests`; injected locator seams allow deterministic acquisition/doctor scenarios. Menu now validates encoder, quality and size answers and propagates catalog messages.
-[V] Latest completed CI run 42956143819 (commit 93016d34): Ubuntu, macOS and Windows build, format, test, publish and binary verification all passed.
-[U] The newly added R14 tests and subsequent production fixes have not yet been verified by CI. Dedicated scenarios for successful install/relocation, exact doctor output, CLI `-y`, and the complete menu flow still need a fresh green run and any fixes it reveals.
-[U] R14 is not complete until every acceptance test in the R14 section of plan.md passes.
+[I] Implemented asynchronous doctor diagnostics for FFmpeg source/version, libx264, optional ffprobe, working encoders, and hardware notes. Doctor exits 3 when neither libx264 nor a hardware encoder is usable.
+[I] Wired `setup`, `doctor`, `-y`, `-n`, and `-m` into AppHost. `-y` is a setup-only action and exits after setup; interactive mode probes all available encoders, lets menu choices override pinned options, and runs the menu before input planning.
+[I] Added Setup acceptance coverage: `AcquisitionFlowTests`, `AcquisitionRelocationTests`, `DoctorTests`, `MenuTests`, and `SetupCliTests`; locator seams provide deterministic acquisition/doctor scenarios. Added the no-elevation source guard.
+[V] CI run 42958644652 (commit 5c37603): Ubuntu, macOS and Windows build, format, test, publish and binary verification all passed. Each OS test suite passed (one existing skipped test on Unix; six Windows-only skips).
+[I] Corrected E-FF-03/E-FF-07 to use the documented wording and platform-specific recovery hints; chain-empty now prints the recovery hint as well.
+[U] Latest follow-up CI run 42958778320 (commit f45caea) is still running on Ubuntu; Windows and macOS checks have passed so far. Keep R14 in progress until that latest run completes successfully and the remaining acceptance checklist is confirmed.
