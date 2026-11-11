@@ -56,7 +56,7 @@ public sealed class SetupCliTests
         var folder = Path.Combine(Path.GetTempPath(), "drawplate-setup-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(folder);
         var source = Path.Combine(folder, "clip.mp4");
-        File.WriteAllText(source, "fixture");
+        await File.WriteAllTextAsync(source, "fixture").ConfigureAwait(true);
         var missing = Path.Combine(Path.GetTempPath(), "missing-ffmpeg-" + Guid.NewGuid().ToString("N"));
         try
         {
