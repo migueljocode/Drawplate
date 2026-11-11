@@ -49,8 +49,8 @@ Describe 'Drawplate installer contract' {
             return (Get-Content -LiteralPath $script:requests | Measure-Object -Line).Lines
         }
 
-        function Run-Installer($Server, [string]$Home, [string]$Bin, [string]$Tag = 'v1.2.3', [switch]$Latest, [switch]$Uninstall) {
-            New-Item -ItemType Directory -Path $Home -Force | Out-Null
+        function Run-Installer($Server, [string]$LocalAppData, [string]$Bin, [string]$Tag = 'v1.2.3', [switch]$Latest, [switch]$Uninstall) {
+            New-Item -ItemType Directory -Path $LocalAppData -Force | Out-Null
             $args = '-NoProfile -ExecutionPolicy Bypass -File "' + $script:installer + '" -Dir "' + $Bin + '" -NoSetup'
             if ($Tag -and -not $Latest) { $args += ' -Version ' + $Tag }
             if ($Uninstall) { $args += ' -Uninstall' }
@@ -61,7 +61,7 @@ Describe 'Drawplate installer contract' {
             $start.UseShellExecute = $false
             $start.RedirectStandardOutput = $true
             $start.RedirectStandardError = $true
-            $start.EnvironmentVariables['LOCALAPPDATA'] = $Home
+            $start.EnvironmentVariables['LOCALAPPDATA'] = $LocalAppData
             $start.EnvironmentVariables['DRAWPLATE_BASE_URL'] = $Server.BaseUrl
             $start.EnvironmentVariables['DRAWPLATE_VERSION'] = if ($Latest) { '' } else { $Tag }
             $start.EnvironmentVariables['DRAWPLATE_INSTALL_DIR'] = $Bin
@@ -77,9 +77,9 @@ Describe 'Drawplate installer contract' {
 
         New-Release 'v1.2.3' '1.2.3' (Join-Path $script:root 'out/drawplate.exe')
         $script:server = Start-ReleaseServer
-        $script:home = Join-Path $script:temp 'home'
-        $script:bin = Join-Path $script:home 'Programs/Drawplate'
-        $script:first = Run-Installer $script:server $script:home $script:bin
+        $script:localAppData = Join-Path $script:temp 'home'
+        $script:bin = Join-Path $script:localAppData 'Programs/Drawplate'
+        $script:first = Run-Installer $script:server $script:localAppData $script:bin
     }
 
     AfterAll {
@@ -91,14 +91,14 @@ Describe 'Drawplate installer contract' {
     It 'T-INS-01 installs from a local release' {
         $script:first.Code | Should -Be 0
         (Test-Path -LiteralPath (Join-Path $script:bin 'drawplate.exe')) | Should -BeTrue
-        (Test-Path -LiteralPath (Join-Path $script:home 'Drawplate/install.json')) | Should -BeTrue
+        (Test-Path -LiteralPath (Join-Path $script:localAppData 'Drawplate/install.json')) | Should -BeTrue
         $script:first.Out | Should -Match 'Drawplate installer 1.2.3'
         $script:first.Out | Should -Match 'Your user PATH was updated'
     }
 
     It 'T-INS-02 skips an up-to-date installation' {
         $before = Request-Count
-        $result = Run-Installer $script:server $script:home $script:bin
+        $result = Run-Installer $script:server $script:localAppData $script:bin
         $result.Code | Should -Be 0
         (Request-Count) | Should -Be $before
         $result.Out | Should -Match 'up to date'
@@ -107,18 +107,18 @@ Describe 'Drawplate installer contract' {
     It 'T-INS-03 repairs a corrupted installed binary' {
         $binary = Join-Path $script:bin 'drawplate.exe'
         [System.IO.File]::WriteAllText($binary, 'truncated')
-        $result = Run-Installer $script:server $script:home $script:bin
+        $result = Run-Installer $script:server $script:localAppData $script:bin
         $result.Code | Should -Be 0
         $result.Out | Should -Match 'repairing'
-        $manifest = Get-Content -LiteralPath (Join-Path $script:home 'Drawplate/install.json') -Raw | ConvertFrom-Json
+        $manifest = Get-Content -LiteralPath (Join-Path $script:localAppData 'Drawplate/install.json') -Raw | ConvertFrom-Json
         (Get-FileHash -Algorithm SHA256 -LiteralPath $binary).Hash.ToLowerInvariant() | Should -Be $manifest.binarySha256
     }
 
     It 'T-INS-04 rejects a bad checksum' {
         $server = Start-ReleaseServer 'badsums'
-        $home = Join-Path $script:temp 'home-badsums'
-        $bin = Join-Path $home 'Programs/Drawplate'
-        $result = Run-Installer $server $home $bin
+        $localAppData = Join-Path $script:temp 'home-badsums'
+        $bin = Join-Path $localAppData 'Programs/Drawplate'
+        $result = Run-Installer $server $localAppData $bin
         $result.Code | Should -Be 13
         $result.Err | Should -Match 'Checksum mismatch'
         (Test-Path -LiteralPath (Join-Path $bin 'drawplate.exe')) | Should -BeFalse
@@ -126,13 +126,13 @@ Describe 'Drawplate installer contract' {
 
     It 'T-INS-05 rejects a truncated download and permits retry' {
         $server = Start-ReleaseServer 'truncate'
-        $home = Join-Path $script:temp 'home-truncate'
-        $bin = Join-Path $home 'Programs/Drawplate'
-        $failed = Run-Installer $server $home $bin
+        $localAppData = Join-Path $script:temp 'home-truncate'
+        $bin = Join-Path $localAppData 'Programs/Drawplate'
+        $failed = Run-Installer $server $localAppData $bin
         $failed.Code | Should -BeIn @(12, 13)
         (Test-Path -LiteralPath (Join-Path $bin 'drawplate.exe')) | Should -BeFalse
         Stop-ReleaseServer $server
-        (Run-Installer $script:server $home $bin).Code | Should -Be 0
+        (Run-Installer $script:server $localAppData $bin).Code | Should -Be 0
     }
 
     It 'T-INS-06 restores the previous binary when a new executable is invalid' {
@@ -147,15 +147,15 @@ Describe 'Drawplate installer contract' {
         $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
         [System.IO.File]::WriteAllText((Join-Path $folder 'SHA256SUMS'), ($hash + '  ' + $name + [Environment]::NewLine), (New-Object System.Text.UTF8Encoding($false)))
         $before = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $script:bin 'drawplate.exe')).Hash
-        $result = Run-Installer $script:server $script:home $script:bin 'v1.2.4'
+        $result = Run-Installer $script:server $script:localAppData $script:bin 'v1.2.4'
         $result.Code | Should -Be 14
         (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $script:bin 'drawplate.exe')).Hash | Should -Be $before
     }
 
     It 'T-INS-07 rejects an active lock folder' {
-        $lock = Join-Path (Join-Path $script:home 'Drawplate') '.lock'
+        $lock = Join-Path (Join-Path $script:localAppData 'Drawplate') '.lock'
         New-Item -ItemType Directory -Path $lock -Force | Out-Null
-        $result = Run-Installer $script:server $script:home $script:bin
+        $result = Run-Installer $script:server $script:localAppData $script:bin
         $result.Code | Should -Be 15
         $result.Err | Should -Match 'Another installation is running'
         Remove-Item -LiteralPath $lock -Recurse -Force
@@ -171,10 +171,10 @@ Describe 'Drawplate installer contract' {
     }
 
     It 'T-INS-09 uninstalls without touching FFmpeg' {
-        $result = Run-Installer $script:server $script:home $script:bin -Uninstall
+        $result = Run-Installer $script:server $script:localAppData $script:bin -Uninstall
         $result.Code | Should -Be 0
         (Test-Path -LiteralPath (Join-Path $script:bin 'drawplate.exe')) | Should -BeFalse
-        (Test-Path -LiteralPath (Join-Path $script:home 'Drawplate/install.json')) | Should -BeFalse
+        (Test-Path -LiteralPath (Join-Path $script:localAppData 'Drawplate/install.json')) | Should -BeFalse
         $result.Out | Should -Match 'FFmpeg was not touched'
     }
 
@@ -190,9 +190,9 @@ Describe 'Drawplate installer contract' {
     }
 
     It 'T-INS-12 resolves latest from the HEAD redirect' {
-        $home = Join-Path $script:temp 'home-latest'
-        $bin = Join-Path $home 'Programs/Drawplate'
-        $result = Run-Installer $script:server $home $bin -Latest
+        $localAppData = Join-Path $script:temp 'home-latest'
+        $bin = Join-Path $localAppData 'Programs/Drawplate'
+        $result = Run-Installer $script:server $localAppData $bin -Latest
         $result.Code | Should -Be 0
         $result.Out | Should -Match 'Finding release.*v1.2.3'
     }

@@ -43,12 +43,13 @@ start_server() {
     fault=$1
     SERVER_INDEX=$((SERVER_INDEX + 1))
     PORT_FILE="$TMP/port-$SERVER_INDEX"
-    python3 "$ROOT/scripts/tests/serve_release.py" --root "$RELEASE" --port-file "$PORT_FILE" --requests-file "$REQUESTS" --fault "$fault" &
+    SERVER_LOG="$TMP/server-$SERVER_INDEX.log"
+    python3 -u "$ROOT/scripts/tests/serve_release.py" --root "$RELEASE" --port-file "$PORT_FILE" --requests-file "$REQUESTS" --fault "$fault" 2>"$SERVER_LOG" &
     SERVER_PID=$!
     attempt=0
     while [ ! -s "$PORT_FILE" ]; do
         attempt=$((attempt + 1))
-        [ "$attempt" -lt 100 ] || { echo "release server did not start" >&2; exit 1; }
+        [ "$attempt" -lt 100 ] || { cat "$SERVER_LOG" >&2; echo "release server did not start" >&2; exit 1; }
         sleep 0.1
     done
     BASE_URL="http://127.0.0.1:$(cat "$PORT_FILE")/releases"
