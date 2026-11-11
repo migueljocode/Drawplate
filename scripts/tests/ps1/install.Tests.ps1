@@ -15,8 +15,8 @@ Describe 'Drawplate installer distribution' {
 
     It 'starts with strict mode and terminating errors' {
         $script:content | Should -Match 'Set-StrictMode -Version 2.0'
-        $script:content | Should -Match "\$ErrorActionPreference = 'Stop'"
-        $script:content | Should -Match "\$ProgressPreference = 'SilentlyContinue'"
+        $script:content | Should -Match '\$ErrorActionPreference\s*=\s*''Stop'''
+        $script:content | Should -Match '\$ProgressPreference\s*=\s*''SilentlyContinue'''
     }
 
     It 'does not use syntax unavailable in Windows PowerShell 5.1' {

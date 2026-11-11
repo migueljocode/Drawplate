@@ -119,11 +119,8 @@ if ! mkdir "$LOCK_DIR" 2>/dev/null; then
     mkdir "$LOCK_DIR" || error "Could not create lock $LOCK_DIR." "Choose another install location." 5
 fi
 STAGING_DIR="$BIN_DIR/.drawplate-staging-$$"
-cleanup() {
-    rm -rf "$LOCK_DIR" "$STAGING_DIR"
-}
-trap cleanup EXIT
-trap 'cleanup; exit 130' HUP INT TERM
+trap 'rm -rf "$LOCK_DIR" "$STAGING_DIR"' EXIT
+trap 'rm -rf "$LOCK_DIR" "$STAGING_DIR"; exit 130' HUP INT TERM
 
 if [ -f "$MANIFEST" ] && [ -f "$BINARY" ]; then
     MANIFEST_VERSION=$(sed -n 's/.*"version":"\([^"]*\)".*/\1/p' "$MANIFEST")
@@ -158,13 +155,17 @@ else
     progress_complete
     EXPECTED_HASH=$(awk -v name="$ARCHIVE" '$2 == name { print $1; exit }' "$STAGING_DIR/SHA256SUMS")
 fi
-[ -n "$EXPECTED_HASH" ] && [ "$EXPECTED_HASH" = "$ACTUAL_HASH" ] || error "Checksum mismatch for $ARCHIVE." "Nothing was installed. Retry; if it repeats, report it." 13
+if [ -z "$EXPECTED_HASH" ] || [ "$EXPECTED_HASH" != "$ACTUAL_HASH" ]; then
+    error "Checksum mismatch for $ARCHIVE." "Nothing was installed. Retry; if it repeats, report it." 13
+fi
 printf '%s\n' '[4/8] Downloading checksums .... [ok] done' '[5/8] Verifying checksum ....... [ok] done'
 
 mkdir -p "$STAGING_DIR/x"
 tar -xzf "$STAGING_DIR/$ARCHIVE" -C "$STAGING_DIR/x" || error "Could not install to $BIN_DIR." "The release archive could not be extracted." 14
 FILE_COUNT=$(find "$STAGING_DIR/x" -type f | wc -l | tr -d ' ')
-[ "$FILE_COUNT" -eq 3 ] && [ -f "$STAGING_DIR/x/drawplate" ] && [ -f "$STAGING_DIR/x/LICENSE" ] && [ -f "$STAGING_DIR/x/THIRD-PARTY-NOTICES.md" ] || error "Could not install to $BIN_DIR." "The archive contains unexpected files." 14
+if [ "$FILE_COUNT" -ne 3 ] || [ ! -f "$STAGING_DIR/x/drawplate" ] || [ ! -f "$STAGING_DIR/x/LICENSE" ] || [ ! -f "$STAGING_DIR/x/THIRD-PARTY-NOTICES.md" ]; then
+    error "Could not install to $BIN_DIR." "The archive contains unexpected files." 14
+fi
 
 if [ -f "$BINARY" ]; then
     mv "$BINARY" "$BINARY.old"
@@ -203,4 +204,3 @@ elif [ "$YES" = "1" ]; then
 fi
 
 exit 0
-

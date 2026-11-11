@@ -340,4 +340,3 @@ if ($PSCommandPath) {
 }
 $global:LASTEXITCODE = $exitCode
 return
-
