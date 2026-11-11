@@ -33,11 +33,6 @@ public sealed class MenuService
             throw new InvalidOperationException("Interactive mode needs a terminal.");
         }
 
-        var options = ImmutableArray.Create(EncoderKind.Cpu)
-            .Where(_ => false)
-            .ToImmutableArray();
-        _ = options;
-
         var ordered = workingEncoders
             .Distinct()
             .ToImmutableArray();
@@ -62,7 +57,14 @@ public sealed class MenuService
             return Invalid(Messages.E_USAGE_05());
         }
 
-        var currentSize = currentMaxSize == SizeCap.None ? "none" : currentMaxSize.ToString().ToLowerInvariant();
+        var currentSize = currentMaxSize switch
+        {
+            SizeCap.Sd => "sd",
+            SizeCap.Hd => "hd",
+            SizeCap.FullHd => "fullhd",
+            SizeCap.Uhd4K => "4k",
+            _ => "none",
+        };
         var sizeChoice = _prompt.Ask("Max size", currentSize);
         if (!string.IsNullOrEmpty(sizeChoice) && !SizeCaps.TryParse(sizeChoice, out _))
         {
