@@ -73,7 +73,7 @@ def main():
     parser.add_argument("--fault", choices=("none", "badsums", "truncate", "slow"), default="none")
     parser.add_argument("--requests-file", default="")
     args = parser.parse_args()
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
     server.root = pathlib.Path(args.root).resolve()
     server.fault = args.fault
     server.requests_file = args.requests_file

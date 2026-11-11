@@ -5,10 +5,6 @@ on:
     paths:
       - 'scripts/**'
       - '.github/workflows/installers.yml'
-  push:
-    branches:
-      - main
-      - task/R18-installer-scripts
 
 jobs:
   generated-up-to-date:
