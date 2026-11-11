@@ -34,7 +34,7 @@ public class SignalTests
 
         var result = run.SignalAndWait("TERM");
 
-        Assert.Equal(130, result.ExitCode);
+        Assert.True(result.ExitCode == 130, $"exit {result.ExitCode}; stderr: {result.Stderr}");
         Assert.True(result.Elapsed < TimeSpan.FromSeconds(5), $"took {result.Elapsed.TotalSeconds:0.0} s");
         Assert.Contains("Interrupted.", result.Stderr, StringComparison.Ordinal);
     }
@@ -46,7 +46,7 @@ public class SignalTests
 
         var result = run.SignalAndWait("INT");
 
-        Assert.Equal(130, result.ExitCode);
+        Assert.True(result.ExitCode == 130, $"exit {result.ExitCode}; stderr: {result.Stderr}");
         Assert.True(result.Elapsed < TimeSpan.FromSeconds(5), $"took {result.Elapsed.TotalSeconds:0.0} s");
     }
 
@@ -57,7 +57,7 @@ public class SignalTests
 
         var result = run.SignalAndWait("HUP");
 
-        Assert.Equal(130, result.ExitCode);
+        Assert.True(result.ExitCode == 130, $"exit {result.ExitCode}; stderr: {result.Stderr}");
         Assert.True(result.Elapsed < TimeSpan.FromSeconds(5), $"took {result.Elapsed.TotalSeconds:0.0} s");
     }
 
