@@ -60,7 +60,10 @@ function Get-LatestTag([string]$BaseUrl) {
             return ''
         }
         $target = [System.Uri]::new([System.Uri]::new($BaseUrl + '/latest'), $response.Headers.Location)
-        return [System.IO.Path]::GetFileName($target.AbsolutePath)
+        $targetPath = $target.AbsolutePath.TrimEnd('/')
+        $lastSlash = $targetPath.LastIndexOf('/')
+        if ($lastSlash -lt 0) { return '' }
+        return $targetPath.Substring($lastSlash + 1)
     }
     finally {
         $client.Dispose()
@@ -215,7 +218,7 @@ function Invoke-DrawplateInstall {
         try { $script:InstallerArguments.Version = Get-LatestTag $baseUrl }
         catch { Write-InstallerError "Could not resolve the latest release ($($_.Exception.Message))." 'Set DRAWPLATE_VERSION to a known release tag and retry.'; $script:InstallerArguments.Version = '' }
     }
-    if (-not $Version) {
+    if (-not $script:InstallerArguments.Version) {
         Write-InstallerError "Could not find a release for $repo." 'Check your internet connection, or set DRAWPLATE_VERSION.'
         return 12
     }
@@ -383,7 +386,8 @@ function Invoke-DrawplateInstall {
 }
 
 $exitCode = Invoke-DrawplateInstall
-if ($MyInvocation.MyCommand.CommandType -eq [System.Management.Automation.CommandTypes]::ExternalScript -or $MyInvocation.MyCommand.Path) {
+$commandLineArgs = [Environment]::GetCommandLineArgs()
+if ($commandLineArgs -contains '-File') {
     exit $exitCode
 }
 $global:LASTEXITCODE = $exitCode
