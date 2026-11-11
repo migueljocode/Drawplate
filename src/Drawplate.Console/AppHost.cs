@@ -153,6 +153,11 @@ internal static class AppHost
             return Fail(Messages.E_USAGE_10(), stderr);
         }
 
+        if (options.InstallDeps)
+        {
+            return RunSetup(options, stdout, stderr, ct);
+        }
+
         var renderer = new PlainRenderer(stdout, Utf8Output());
 
         // Input and output problems are reported before FFmpeg is touched, so they start no process.
