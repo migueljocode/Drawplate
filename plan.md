@@ -17,15 +17,22 @@
   ```
   Remaining work is to make the **Pester helpers** and any remaining dispatch path return those codes reliably, and to prove cleanup (no staging left, `.old` restored).
 
+## CI note (FFmpeg install — not R18 product scope, but blocking green main CI)
+
+- **Problem 1:** `sudo apt-get install -y ffmpeg` on `ubuntu-latest` can hang >20 min (mirror/deps). Replaced with `FedericoCarboni/setup-ffmpeg@v3` on Linux and Windows (static binaries + cache).
+- **Problem 2:** that action does **not** support Darwin ARM64 (`macos-latest` is arm64; evermeet.cx has no arm64 builds — [setup-ffmpeg#21](https://github.com/federicocarboni/setup-ffmpeg/issues/21)). Error: `Unsupported architecture (only x64 is supported)`.
+- **Fix in `.github/workflows/ci.yml`:** hybrid setup — `setup-ffmpeg@v3` when `runner.os != 'macOS'`; `brew install ffmpeg` with `timeout-minutes: 5` when `runner.os == 'macOS'`. Job `timeout-minutes: 25`.
+- Actor must **not** change this hybrid further unless a step still hangs; do not reintroduce apt on Ubuntu.
+
 ## Reviewer Briefing
 - HIGH: T-INS-04 (bad checksum → 13), T-INS-05 (truncated download → 12 or 13), T-INS-06 (non-working binary → 14 + previous restored) must return the exact exit codes on **both** Windows shells. Message-only success is not enough.
 - HIGH: After any of those failures the staging folder must be gone and, for T-INS-06, the previous binary must be restored (`.old` moved back).
 - MEDIUM: `git diff --exit-code scripts/dist` after regenerating must be clean (dist is committed and current).
-- MEDIUM: Never install system packages (no `apt`/`brew`/`winget`/`choco`). Local `serve_release.py` only. AGENTS rule 8.
+- MEDIUM: Never install system packages (no `apt`/`brew`/`winget`/`choco`) **inside installer product scripts or installer tests**. CI may use brew only for the macOS FFmpeg setup step above.
 - LOW: ShellCheck / PSScriptAnalyzer already expected green; do not regress.
 
 ## [ ] Step 1 — Reproduce and pin the three Windows failures
-- Files: inspect only — `scripts/src/ps1/install.ps1`, `scripts/tests/ps1/install.Tests.ps1` (and any helper), `scripts/tests/serve_release.py`, CI log of run 43005858724.
+- Files: inspect only — `scripts/src/ps1/install.ps1`, `scripts/tests/ps1/install.Tests.ps1` (and any helper), `scripts/tests/serve_release.py`, CI log of run 43005858724 (and later Installer CI runs).
 - Symbols: `Invoke-DrawplateInstall`, `$PSCommandPath`, `$global:LASTEXITCODE`, Pester wrapper that launches the installer.
 - Current → Desired: failures return 0 → return 13 / 12-or-13 / 14 and leave no staging / restore `.old`.
 - Change: **none yet**. Record the exact Pester assertion text and the process exit code observed.
@@ -77,7 +84,8 @@
 - All G.4 tests (T-INS-01..12) pass, including the three Windows exit-code cases.
 - `installers.yml` fully green.
 - `scripts/dist/` matches sources after generator run.
-- No system package installs performed.
+- Main CI FFmpeg setup remains hybrid (setup-ffmpeg non-macOS, brew macOS); no apt hang regression.
+- No system package installs performed by product installer scripts.
 - PROGRESS.md: R17 remains DONE; R18 marked DONE with [V] CI run link and the exact commands.
 - One commit per step; stop after each for Job B. Actor never edits plan.md / audit / ticks stages.
 
