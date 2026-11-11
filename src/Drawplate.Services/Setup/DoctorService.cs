@@ -30,12 +30,14 @@ public sealed class DoctorService
     private readonly IProcessLauncher _launcher;
     private readonly PlatformInfo _platform;
     private readonly Func<string?, FfmpegCandidate?> _locator;
+    private readonly Func<string, string?> _ffprobeLocator;
 
     public DoctorService(
         FfmpegInfoService infoService,
         IProcessLauncher launcher,
         PlatformInfo platform,
-        Func<string?, FfmpegCandidate?>? locator = null)
+        Func<string?, FfmpegCandidate?>? locator = null,
+        Func<string, string?>? ffprobeLocator = null)
     {
         ArgumentNullException.ThrowIfNull(infoService);
         ArgumentNullException.ThrowIfNull(launcher);
@@ -44,6 +46,7 @@ public sealed class DoctorService
         _launcher = launcher;
         _platform = platform;
         _locator = locator ?? LocateSystem;
+        _ffprobeLocator = ffprobeLocator ?? LocateFfprobe;
     }
 
     public async Task<DoctorReport> RunAsync(string? ffmpegPath, CancellationToken ct)
@@ -90,11 +93,7 @@ public sealed class DoctorService
         lines.Add(new DoctorLine("ok", "FFmpeg", $"{info.Path} ({info.Version.Version}, found on {SourceName(candidate.Source)})"));
         lines.Add(new DoctorLine(info.HasLibx264 ? "ok" : "broken", "libx264", info.HasLibx264 ? "present" : "absent"));
 
-        var ffprobe = FfprobeLocator.Find(
-            candidate.Path,
-            PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")),
-            File.Exists,
-            os);
+        var ffprobe = _ffprobeLocator(candidate.Path);
         lines.Add(new DoctorLine("ok", "ffprobe", ffprobe is null ? "not found (optional; durations come from ffmpeg)" : $"{ffprobe} (optional)"));
 
         var probe = new EncoderProbe(_launcher, _infoService, os);
@@ -127,6 +126,13 @@ public sealed class DoctorService
 
         return new DoctorReport { Lines = lines.ToImmutable(), ExitCode = 0 };
     }
+
+    private string? LocateFfprobe(string ffmpegPath) =>
+        FfprobeLocator.Find(
+            ffmpegPath,
+            PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")),
+            File.Exists,
+            _platform.Os);
 
     private FfmpegCandidate? LocateSystem(string? ffmpegPath)
     {
