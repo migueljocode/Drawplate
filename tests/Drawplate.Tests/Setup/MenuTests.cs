@@ -42,7 +42,7 @@ public sealed class MenuTests
         var result = new MenuService(new ScriptedPrompt(["99"])).Run([EncoderKind.Cpu], 50, SizeCap.None);
 
         Assert.Equal("Invalid choice.", result.Error!.Text);
-        Assert.Equal(2, result.Error.ExitCode);
+        Assert.Equal(2, result.Error!.ExitCode);
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public sealed class MenuTests
         var result = new MenuService(new ScriptedPrompt(["1", "50", "8k"])).Run([EncoderKind.Cpu], 50, SizeCap.None);
 
         Assert.Equal("Invalid max size '8k'.", result.Error!.Text);
-        Assert.Equal("Choose one of: sd, hd, fullhd, 4k, none.", result.Error.Hint);
+        Assert.Equal("Choose one of: sd, hd, fullhd, 4k, none.", result.Error!.Hint);
     }
 
     [Fact]
