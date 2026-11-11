@@ -1,8 +1,8 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 
+using Drawplate.Tests.Cli;
 using Drawplate.Tests.Process;
 
 using Xunit;
