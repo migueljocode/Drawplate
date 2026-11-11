@@ -47,12 +47,12 @@ start_server() {
     python3 -u "$ROOT/scripts/tests/serve_release.py" --root "$RELEASE" --port-file "$PORT_FILE" --requests-file "$REQUESTS" --fault "$fault" >"$SERVER_LOG" 2>&1 &
     SERVER_PID=$!
     attempt=0
-    while [ ! -s "$SERVER_LOG" ]; do
+    while [ ! -s "$PORT_FILE" ]; do
         attempt=$((attempt + 1))
         [ "$attempt" -lt 100 ] || { cat "$SERVER_LOG" >&2; echo "release server did not start" >&2; exit 1; }
         sleep 0.1
     done
-    PORT=$(head -n 1 "$SERVER_LOG")
+    PORT=$(cat "$PORT_FILE")
     case "$PORT" in *[!0-9]*|'') cat "$SERVER_LOG" >&2; echo "invalid release server port" >&2; exit 1 ;; esac
     BASE_URL="http://127.0.0.1:$PORT/releases"
 }

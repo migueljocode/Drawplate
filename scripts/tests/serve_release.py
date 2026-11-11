@@ -67,13 +67,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 def main():
+    print("server-starting", flush=True)
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", required=True)
     parser.add_argument("--port-file", required=True)
     parser.add_argument("--fault", choices=("none", "badsums", "truncate", "slow"), default="none")
     parser.add_argument("--requests-file", default="")
     args = parser.parse_args()
+    print("arguments-parsed", flush=True)
     server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    print("server-bound", flush=True)
     server.root = pathlib.Path(args.root).resolve()
     server.fault = args.fault
     server.requests_file = args.requests_file
