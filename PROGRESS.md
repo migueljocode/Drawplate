@@ -193,3 +193,12 @@ Result: DONE. CI run 42928618632 (before this docs commit): ubuntu, macos, windo
 [I] Deviation: new test helper file `tests/Drawplate.Tests/Cli/UnixFactAttribute.cs` (CA1034 forbids a nested attribute)
 [I] SIGQUIT is registered but has no test; the plan's test list has none
 [U] Windows: Ctrl-C and Ctrl-Break delivery is not tested (signal tests skip there). Needs the R17 CI work or a manual check
+
+
+### R14 Setup, doctor, interactive menu, install flags
+Result: IN PROGRESS.
+[I] Implemented the acquisition flow with nullable FFmpeg path handling, injected output writers, exact platform install guidance, and post-install relocation/revalidation.
+[I] Implemented asynchronous doctor diagnostics for FFmpeg source/version, libx264, optional ffprobe, working encoders, and hardware notes.
+[I] Wired `setup`, `doctor`, `-y`, `-n`, and `-m` into AppHost; added the no-elevation source guard.
+[U] Full R14 acquisition/doctor/menu acceptance tests are not yet implemented.
+[U] Build, format, and test verification is pending CI; do not treat R14 as complete until the full acceptance list in plan.md passes.
