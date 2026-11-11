@@ -43,7 +43,7 @@ public sealed class MenuService
         if (!int.TryParse(encoderChoice, NumberStyles.None, CultureInfo.InvariantCulture, out var encoderIndex)
             || encoderIndex < 1 || encoderIndex > choices.Length)
         {
-            return Invalid(Messages.E_MENU_01());
+            return Invalid(new Message("E-MENU-01", "Invalid choice.", null, 2));
         }
 
         var encoder = encoderIndex == 1 ? null : ordered[encoderIndex - 2];
