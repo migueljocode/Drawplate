@@ -78,7 +78,8 @@ public sealed class AcquisitionFlowTests
     public async Task Interactive_No_Exit3()
     {
         var prompt = new TestPrompt(true, false);
-        var (flow, _, stderr) = CreateFlow(prompt, null, OperatingSystemKind.MacOS);
+        var (flow, _, stderr) = CreateFlow(prompt, null, OperatingSystemKind.Windows,
+            _ => null, tools: ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "winget"));
 
         var outcome = await flow.RunAsync(AcquisitionMode.SetupCommand, false, false, null, CancellationToken.None);
 
