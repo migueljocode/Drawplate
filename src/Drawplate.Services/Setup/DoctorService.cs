@@ -103,11 +103,22 @@ public sealed class DoctorService
         var working = results.Where(r => r.Passed).Select(r => EncoderSets.Id(r.Kind)).ToImmutableArray();
         lines.Add(new DoctorLine(working.IsEmpty ? "broken" : "ok", "Encoders", working.IsEmpty ? "none" : string.Join(", ", working)));
 
+        var hardwarePassed = results.Any(r => r.Passed && r.Kind != EncoderKind.Cpu);
+        if (!info.HasLibx264 && !hardwarePassed)
+        {
+            return new DoctorReport
+            {
+                Lines = lines.ToImmutable(),
+                ExitCode = 3,
+                Error = Messages.E_FF_03()
+            };
+        }
+
         var nvenc = results.FirstOrDefault(r => r.Kind == EncoderKind.Nvenc && r.FailureKind == ProbeFailureKind.NvencDriverTooOld);
         var minimumDriver = nvenc is null ? null : FailureClassifier.ParseNvenc(nvenc.StderrTail).MinimumDriver;
         var note = HardwareNote.For(
             GpuDetector.HasGpu(),
-            results.Any(r => r.Passed && r.Kind != EncoderKind.Cpu),
+            hardwarePassed,
             nvenc is not null,
             minimumDriver);
         if (note is not null)
