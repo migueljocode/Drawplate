@@ -17,7 +17,7 @@ public sealed class SetupCliTests
     public async Task Cli_N_NoPrompt_Exit3()
     {
         var missing = Path.Combine(Path.GetTempPath(), "missing-ffmpeg-" + Guid.NewGuid().ToString("N"));
-        var result = await RunCliAsync(["setup", "-n", "--ffmpeg-path", missing]);
+        var result = await RunCliAsync(["setup", "-n", "--ffmpeg-path", missing]).ConfigureAwait(true);
 
         Assert.Equal(3, result.ExitCode);
         Assert.Contains("could not be run (file not found)", result.Stderr, StringComparison.Ordinal);
@@ -36,7 +36,7 @@ public sealed class SetupCliTests
         Environment.SetEnvironmentVariable("FAKE_EXE_SCRIPT", script);
         try
         {
-            var result = await RunCliAsync(["setup", "--ffmpeg-path", wrapper]);
+            var result = await RunCliAsync(["setup", "--ffmpeg-path", wrapper]).ConfigureAwait(true);
 
             Assert.Equal(0, result.ExitCode);
             Assert.Equal("FFmpeg is already installed." + Environment.NewLine, result.Stdout);
@@ -60,7 +60,7 @@ public sealed class SetupCliTests
         var missing = Path.Combine(Path.GetTempPath(), "missing-ffmpeg-" + Guid.NewGuid().ToString("N"));
         try
         {
-            var result = await RunCliAsync(["--no-install", "--ffmpeg-path", missing, source]);
+            var result = await RunCliAsync(["--no-install", "--ffmpeg-path", missing, source]).ConfigureAwait(true);
 
             Assert.Equal(3, result.ExitCode);
             Assert.Contains("could not be run (file not found)", result.Stderr, StringComparison.Ordinal);
@@ -75,7 +75,7 @@ public sealed class SetupCliTests
     [Trait("Tier", "T1")]
     public async Task Cli_Menu_NonInteractive_Exit2()
     {
-        var result = await RunCliAsync(["-m"]);
+        var result = await RunCliAsync(["-m"]).ConfigureAwait(true);
 
         Assert.Equal(2, result.ExitCode);
         Assert.Contains("Interactive mode needs a terminal.", result.Stderr, StringComparison.Ordinal);
@@ -94,7 +94,7 @@ public sealed class SetupCliTests
         Environment.SetEnvironmentVariable("FAKE_EXE_SCRIPT", script);
         try
         {
-            var result = await RunCliAsync(["doctor", "--ffmpeg-path", wrapper]);
+            var result = await RunCliAsync(["doctor", "--ffmpeg-path", wrapper]).ConfigureAwait(true);
 
             Assert.Equal(0, result.ExitCode);
             Assert.Contains("FFmpeg", result.Stdout, StringComparison.Ordinal);
