@@ -46,7 +46,7 @@ public sealed class MenuService
             return Invalid(new Message("E-MENU-01", "Invalid choice.", null, 2));
         }
 
-        var encoder = encoderIndex == 1 ? null : ordered[encoderIndex - 2];
+        EncoderKind? encoder = encoderIndex == 1 ? null : ordered[encoderIndex - 2];
 
         var qualityChoice = _prompt.Ask("Quality", currentQuality.ToString(CultureInfo.InvariantCulture));
         var quality = currentQuality;
