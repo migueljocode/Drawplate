@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Immutable;
+using System.Globalization;
 using System.Linq;
 
+using Drawplate.Models.Cli;
 using Drawplate.Models.Encoding;
 
 namespace Drawplate.Services.Interaction;
@@ -10,6 +13,7 @@ public sealed class MenuResult
     public required EncoderKind? Encoder { get; init; }
     public required int? Quality { get; init; }
     public required SizeCap? MaxSize { get; init; }
+    public required Message? Error { get; init; }
 }
 
 public sealed class MenuService
@@ -29,31 +33,47 @@ public sealed class MenuService
             throw new InvalidOperationException("Interactive mode needs a terminal.");
         }
 
-        var encoderOptions = workingEncoders
-            .OrderBy(k => k == EncoderKind.Cpu ? 1 : 0)
-            .ThenBy(k => k)
+        var options = ImmutableArray.Create(EncoderKind.Cpu)
+            .Where(_ => false)
             .ToImmutableArray();
+        _ = options;
 
-        var encoderChoice = _prompt.Ask("Encoder", "1");
-        var encoder = encoderOptions.Length > 0 && int.TryParse(encoderChoice, out var idx)
-            && idx >= 1 && idx <= encoderOptions.Length
-            ? encoderOptions[idx - 1]
-            : (encoderOptions.Length > 0 ? (EncoderKind?)encoderOptions[0] : null);
-
-        var qualityChoice = _prompt.Ask("Quality", currentQuality.ToString());
-        int quality = currentQuality;
-        if (!string.IsNullOrEmpty(qualityChoice) && int.TryParse(qualityChoice, out var q) && QualityScale.IsValid(q))
+        var ordered = workingEncoders
+            .Distinct()
+            .ToImmutableArray();
+        var choices = ImmutableArray.Create("auto")
+            .AddRange(ordered.Select(EncoderSets.Id));
+        var label = $"Encoder ({string.Join(", ", choices.Select((choice, index) => $"{index + 1} {choice}"))})";
+        var encoderChoice = _prompt.Ask(label, "1");
+        if (!int.TryParse(encoderChoice, NumberStyles.None, CultureInfo.InvariantCulture, out var encoderIndex)
+            || encoderIndex < 1 || encoderIndex > choices.Length)
         {
-            quality = q;
+            return Invalid(Messages.E_MENU_01());
         }
 
-        var sizeChoice = _prompt.Ask("Max size", currentMaxSize == SizeCap.None ? "none" : currentMaxSize.ToString());
-        SizeCap maxSize = currentMaxSize;
-        if (!string.IsNullOrEmpty(sizeChoice) && SizeCaps.TryParse(sizeChoice, out var cap))
+        var encoder = encoderIndex == 1 ? null : ordered[encoderIndex - 2];
+
+        var qualityChoice = _prompt.Ask("Quality", currentQuality.ToString(CultureInfo.InvariantCulture));
+        var quality = currentQuality;
+        if (!string.IsNullOrEmpty(qualityChoice)
+            && (!int.TryParse(qualityChoice, NumberStyles.None, CultureInfo.InvariantCulture, out quality)
+                || !QualityScale.IsValid(quality)))
         {
-            maxSize = cap;
+            return Invalid(Messages.E_USAGE_05());
         }
 
-        return new MenuResult { Encoder = encoder, Quality = quality, MaxSize = maxSize };
+        var currentSize = currentMaxSize == SizeCap.None ? "none" : currentMaxSize.ToString().ToLowerInvariant();
+        var sizeChoice = _prompt.Ask("Max size", currentSize);
+        if (!string.IsNullOrEmpty(sizeChoice) && !SizeCaps.TryParse(sizeChoice, out _))
+        {
+            return Invalid(new Message("E-MENU-02", $"Invalid max size '{sizeChoice}'.",
+                "Choose one of: sd, hd, fullhd, 4k, none.", 2));
+        }
+
+        _ = SizeCaps.TryParse(sizeChoice, out var maxSize);
+        return new MenuResult { Encoder = encoder, Quality = quality, MaxSize = maxSize, Error = null };
     }
+
+    private static MenuResult Invalid(Message error) =>
+        new() { Encoder = null, Quality = null, MaxSize = null, Error = error };
 }
