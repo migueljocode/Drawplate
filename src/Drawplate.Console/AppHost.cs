@@ -200,7 +200,7 @@ internal static class AppHost
         }
         if (infoResult.TooOld is { } tooOld)
         {
-            return Fail(Messages.E_FF_07(candidate.Path, tooOld.Version.ToString()), stderr);
+            return Fail(Messages.E_FF_07(tooOld.Version.ToString(), os), stderr);
         }
 
         var info = infoResult.Info!;
