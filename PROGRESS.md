@@ -228,8 +228,13 @@ Result: IN PROGRESS.
 
 
 ### 2026-11-11 R17 Native AOT, CI smoke, size budget
+Result: DONE (CI run [43000273712](https://github.com/migueljocode/Drawplate/actions/runs/43000273712): Ubuntu, macOS and Windows all green).
+[V] Native-AOT publish and framework-dependent baseline publish succeeded for linux-x64, osx-arm64 and win-x64; no build or publish warnings were reported as errors.
+[V] Exact version check, one-second FFmpeg conversion/output check and Unix SIGTERM exit-130 smoke passed on Ubuntu and macOS; conversion smoke passed on Windows.
+[V] Per-RID Native-AOT and framework-dependent binary sizes are recorded in the workflow job summaries.
+[U] T1.6/S5 UI-library cost spike remains unmeasured because the authoring environment has no .NET SDK and cannot resolve external network hosts. ADR 0003 records this limitation; no UI package is added.
+
+### 2026-11-11 R18 Installer scripts
 Result: IN PROGRESS.
-[I] Enabled Native-AOT publishing for the Console project while retaining size optimization and symbol stripping.
-[I] CI now publishes a framework-dependent baseline and a Native-AOT binary for each RID, checks the exact CI version, converts a generated one-second FFmpeg clip, and exercises SIGTERM on Unix. Per-RID sizes are written to the job summary.
-[U] Native-AOT warnings, ILCompiler output, conversion smoke, SIGTERM behavior, and actual binary sizes await the R17 CI run.
-[U] T1.6/S5 UI-library cost spike is not measured: this execution environment has no .NET SDK and cannot resolve external network hosts. ADR 0003 records the missing measurements explicitly; no UI package is added.
+[I] Reworking the installer generator to copy the maintained single-file sources without module-list headers; adding release-server, shell, PowerShell, progress and CI coverage.
+[U] Installer behavior and cross-shell compatibility await the R18 CI run.
