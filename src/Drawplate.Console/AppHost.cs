@@ -75,7 +75,7 @@ internal static class AppHost
     {
         var platform = PlatformDetector.Detect(PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")), File.Exists);
         var info = new FfmpegInfoService(new ProcessLauncher());
-        var flow = new AcquisitionFlow(info, CreatePrompt(), new InstallRunner(new ProcessLauncher()), platform, stdout, stderr);
+        var flow = new AcquisitionFlow(info, CreatePrompt(stdout), new InstallRunner(new ProcessLauncher()), platform, stdout, stderr);
         var result = flow.RunAsync(AcquisitionMode.SetupCommand, options.InstallDeps, options.NoInstall, options.FfmpegPath, ct)
             .GetAwaiter().GetResult();
         return result.ExitCode;
@@ -105,10 +105,10 @@ internal static class AppHost
         return report.ExitCode;
     }
 
-    private static IPrompt CreatePrompt() =>
+    private static IPrompt CreatePrompt(TextWriter output) =>
         new ConsolePrompt(
             global::System.Console.In,
-            global::System.Console.Out,
+            output,
             !global::System.Console.IsInputRedirected,
             !global::System.Console.IsOutputRedirected);
 
@@ -148,7 +148,7 @@ internal static class AppHost
             return Fail(validation.Error!, stderr);
         }
 
-        if (options.Interactive && !CreatePrompt().IsInteractive)
+        if (options.Interactive && !CreatePrompt(stdout).IsInteractive)
         {
             return Fail(Messages.E_USAGE_10(), stderr);
         }
@@ -171,7 +171,7 @@ internal static class AppHost
         var infoService = new FfmpegInfoService(new ProcessLauncher());
         var acquisition = new AcquisitionFlow(
             infoService,
-            CreatePrompt(),
+            CreatePrompt(stdout),
             new InstallRunner(new ProcessLauncher()),
             platformInfo,
             stdout,
@@ -214,25 +214,26 @@ internal static class AppHost
         if (options.Interactive)
         {
             var menu = new MenuService(CreatePrompt()).Run(working, convert.Quality, convert.MaxSize);
-            if (menu.Encoder is { } selected)
+            var selected = menu.Encoder ?? convert.Encoder;
+            if (selected is { } selectedEncoder)
             {
-                var selectedBuild = EncoderChain.Build(EncoderSets.Id(selected), os, working);
+                var selectedBuild = EncoderChain.Build(EncoderSets.Id(selectedEncoder), os, working);
                 if (selectedBuild.Error is { } selectedError)
                 {
                     return Fail(selectedError, stderr);
                 }
                 chain = selectedBuild.Chain;
-                convert = new ConvertOptions
-                {
-                    Encoder = selected,
-                    Quality = menu.Quality ?? convert.Quality,
-                    MaxSize = menu.MaxSize ?? convert.MaxSize,
-                    InputFolder = convert.InputFolder,
-                    Files = convert.Files,
-                    NoTimestamps = convert.NoTimestamps,
-                    OutputFolder = convert.OutputFolder
-                };
             }
+            convert = new ConvertOptions
+            {
+                Encoder = selected,
+                Quality = menu.Quality ?? convert.Quality,
+                MaxSize = menu.MaxSize ?? convert.MaxSize,
+                InputFolder = convert.InputFolder,
+                Files = convert.Files,
+                NoTimestamps = convert.NoTimestamps,
+                OutputFolder = convert.OutputFolder
+            };
         }
 
         if (chain.IsEmpty)
