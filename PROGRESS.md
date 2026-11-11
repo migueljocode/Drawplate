@@ -210,3 +210,17 @@ Result: DONE.
 [V] `dotnet format src/Drawplate.slnx --verify-no-changes` -> exit 0 on all three OS (same CI run).
 [V] `dotnet test tests/Drawplate.Tests -c Release` -> Ubuntu/macOS: 371 passed, 1 skipped, 0 failed; Windows: 366 passed, 6 skipped, 0 failed (same CI run).
 [V] Publish and binary version verification passed on all three OS (same CI run).
+
+
+### 2026-11-11 R16 Integration and CLI regression tests
+Result: IN PROGRESS.
+[I] Added test-time FFmpeg fixture generation, a CI-sensitive FFmpeg fact, Unix-only fact, real ConversionRunner integration coverage, the I.3 regression cases, and built-binary CLI checks.
+[V] First CI attempt 42963082500 exposed test-only analyzer/build errors (xUnit1030, xUnit1002, CA1812, CA1849, CA5392, and a Process namespace collision); fixes were applied in the stage branch.
+[V] CI run 42963082500 caught 21 test-project compile/analyzer errors; CI run 42963284677 caught 13 remaining analyzer errors; CI run 42963460422 confirmed builds and found initial formatting issues; CI run 42963628987 confirmed builds and narrowed formatting to four namespace-separation lines, now fixed.
+[V] CI run 42964078749: build, format, tests, publish and binary verification passed on Ubuntu, macOS and Windows. Ubuntu/macOS: 400 passed, 1 skipped, 0 failed; Windows: 394 passed, 7 skipped, 0 failed.
+[I] Expanded the built-binary CLI matrix with FFmpeg-version, encoder-selection, no-input, help-no-process and exception-boundary cases. CI run 42964515416: Ubuntu build + format passed; 408 passed, 2 failed due to expected-message mismatches. macOS: 407 passed, 3 failed (the same two messages plus NVENC being unsupported on macOS). Assertions were corrected and the hardware test now selects VideoToolbox on macOS.
+[V] CI run 42964887540: build, format, tests, publish and binary verification passed on Ubuntu, macOS and Windows. Ubuntu/macOS: 410 passed, 1 skipped; Windows: 404 passed, 7 skipped.
+[V] CI run 42965328794: Ubuntu build + format + tests passed (410 passed, 1 skipped); macOS build + format passed, but the new even-dimension assertion failed (409 passed, 1 failed, 1 skipped). Windows test run is pending/completing.
+[V] CI run 42965618960: Ubuntu build exposed two incorrect xUnit assertion overloads in the new diagnostic; corrected to Assert.True with explicit messages. The same run exposed an unrelated setup-test failure while the new CLI exception test changed global Console.Error; removed that global-console test to avoid cross-test interference.
+[I] Added output-dimension diagnostics to identify which source produces an odd-width output; investigate before changing product code.
+[U] Remaining review: confirm the 14-row CLI matrix matches every applicable Part 3 row and the plan's missing-file check; R16 is not complete.
