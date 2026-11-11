@@ -22,7 +22,7 @@ public sealed class DoctorTests
     [Trait("Tier", "T1")]
     public async Task AllOk_Exit0_ExactLines()
     {
-        var report = await RunAsync(InfoScript(true), gpu: false);
+        var report = await RunAsync(InfoScript(true), gpu: false).ConfigureAwait(true);
 
         Assert.Equal(0, report.ExitCode);
         Assert.Collection(
@@ -37,7 +37,7 @@ public sealed class DoctorTests
     [Trait("Tier", "T1")]
     public async Task Missing_ShowsE_FF_01_Exit3()
     {
-        var report = await RunAsync(null, gpu: false, missing: true);
+        var report = await RunAsync(null, gpu: false, missing: true).ConfigureAwait(true);
 
         Assert.Equal(3, report.ExitCode);
         Assert.Equal(new DoctorLine("missing", "FFmpeg", "not found"), Assert.Single(report.Lines));
@@ -48,7 +48,7 @@ public sealed class DoctorTests
     public async Task Broken_ShowsE_FF_02_Exit3()
     {
         var missingPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
-        var report = await RunAsync(null, gpu: false, candidate: new FfmpegCandidate(missingPath, FfmpegSource.Argument));
+        var report = await RunAsync(null, gpu: false, candidate: new FfmpegCandidate(missingPath, FfmpegSource.Argument)).ConfigureAwait(true);
 
         Assert.Equal(3, report.ExitCode);
         Assert.Equal("broken", Assert.Single(report.Lines).Status);
@@ -59,7 +59,7 @@ public sealed class DoctorTests
     [Trait("Tier", "T1")]
     public async Task Outdated_Exit3()
     {
-        var report = await RunAsync("{\"if\":\"-version\",\"stdout\":\"ffmpeg version 5.1.1\\n\"}\n{\"exit\":0}", gpu: false);
+        var report = await RunAsync("{\"if\":\"-version\",\"stdout\":\"ffmpeg version 5.1.1\\n\"}\n{\"exit\":0}", gpu: false).ConfigureAwait(true);
 
         Assert.Equal(3, report.ExitCode);
         Assert.Equal("outdated", Assert.Single(report.Lines).Status);
@@ -70,7 +70,7 @@ public sealed class DoctorTests
     [Trait("Tier", "T1")]
     public async Task NoFfprobe_StillOk()
     {
-        var report = await RunAsync(InfoScript(true), gpu: false);
+        var report = await RunAsync(InfoScript(true), gpu: false).ConfigureAwait(true);
 
         Assert.Equal(0, report.ExitCode);
         var ffprobe = Assert.Single(report.Lines, line => line.Check == "ffprobe");
@@ -83,7 +83,7 @@ public sealed class DoctorTests
     public async Task NoLibx264_NoHwEncoder_Broken_E_FF_03()
     {
         var script = "{\"if\":\"-version\",\"stdout\":\"ffmpeg version 6.1.1\\n\"}\n{\"if\":\"-encoders\",\"stdout\":\"\"}\n{\"exit\":0}";
-        var report = await RunAsync(script, gpu: false);
+        var report = await RunAsync(script, gpu: false).ConfigureAwait(true);
 
         Assert.Equal(3, report.ExitCode);
         Assert.Equal("broken", report.Lines[^1].Status);
@@ -95,7 +95,7 @@ public sealed class DoctorTests
     [Trait("Tier", "T1")]
     public async Task Note_DoesNotChangeExit()
     {
-        var report = await RunAsync(InfoScript(true), gpu: true);
+        var report = await RunAsync(InfoScript(true), gpu: true).ConfigureAwait(true);
 
         Assert.Equal(0, report.ExitCode);
         var note = Assert.Single(report.Lines, line => line.Status == "note");
@@ -134,7 +134,7 @@ public sealed class DoctorTests
                 new ProcessLauncher(),
                 platform,
                 _ => missing ? null : candidate ?? new FfmpegCandidate(wrapper!, FfmpegSource.Argument));
-            return await service.RunAsync(wrapper, CancellationToken.None);
+            return await service.RunAsync(wrapper, CancellationToken.None).ConfigureAwait(true);
         }
         finally
         {
