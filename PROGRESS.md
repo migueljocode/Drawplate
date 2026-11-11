@@ -19,16 +19,14 @@ Result: **DONE** (owner direction 2026-11-11: treat as complete; forgotten mark 
 [U] T1.6/S5 UI-library cost spike unmeasured (no SDK in authoring environment); ADR 0003 records the limit; no UI package added.
 
 ### 2026-11-11 R18 Installer scripts
-Result: **IN PROGRESS** (focused plan rewritten on this branch).
-[V] Generator copies single-file sources; dist present; Ubuntu/macOS Installer CI green.
-[V] Prior Installer CI run https://github.com/migueljocode/Drawplate/actions/runs/43005858724 — Windows shells failed only T-INS-04/05/06 (exit 0 instead of 13/12-or-13/14).
-[V] Step 1 reproduction on Installer CI run [43055606701](https://github.com/migueljocode/Drawplate/actions/runs/43055606701): all three cases are launched by the Pester helper with PowerShell `-File` and captured through `System.Diagnostics.Process.ExitCode`; observed exit code is 0 for T-INS-04 (expected 13), T-INS-05 (expected 12/13), and T-INS-06 (expected 14), on both PowerShell 5.1 and 7. Logs show the intended checksum rejection, truncated-response rejection and previous-binary restoration messages. Cleanup checks were previously after the failing code assertion, so their state was not observable; moved them before code assertions and added explicit diagnostics.
-[I] Step 2 makes process termination explicit via `[Environment]::Exit`, while retaining `$PSCommandPath` and `$MyInvocation.MyCommand.Path` as file-execution detection and `$global:LASTEXITCODE` for interactive/piped use.
-[I] Repair implementation and reordered diagnostics committed in 72388b4; awaiting Installer CI and general CI on the updated branch tip.
-[U] Final green Installer CI run required before marking R18 DONE.
+Result: **DONE** (repair and CI completion recorded in the R19 plan snapshot).
+[I] Main CI run https://github.com/migueljocode/Drawplate/actions/runs/43062731366 is recorded as successful on `main` at `c240e2c` (Ubuntu, macOS, Windows).
+[I] Installer CI run https://github.com/migueljocode/Drawplate/actions/runs/43059860922 is recorded as successful on R18 tip `dd33b21`, including both Windows shells.
+[I] The Windows `System.Object[]` exit-code failure was traced to `$response.EnsureSuccessStatusCode()` emitting its returned `HttpResponseMessage` from `Get-HttpFile`; suppressing that non-contract output with `[void]` in source and generated distribution fixed the exit-code propagation.
+[U] These historical workflow runs were not independently re-fetched in this execution session; see the linked run records for the CI evidence.
 
-
-[V] Step 2 traced the Windows `System.Object[]` exit failure to `$response.EnsureSuccessStatusCode()` emitting its returned `HttpResponseMessage` from `Get-HttpFile`; suppressed that non-contract output with `[void]` in source and generated distribution. Awaiting both Windows-shell verification.
+### 2026-11-11 R19 Documentation and release engineering
+Result: **IN PROGRESS** (this branch; see plan.md).
 
 ## Unverified
 
@@ -36,5 +34,6 @@ Result: **IN PROGRESS** (focused plan rewritten on this branch).
 
 ## Decisions
 - 2026-11-11: Owner treats R17 as DONE; agent proceeds with R18 only.
+- 2026-11-11: R18 marked DONE from the CI evidence recorded in plan.md; historical run records remain independently re-checkable.
 
 ## Deferred
