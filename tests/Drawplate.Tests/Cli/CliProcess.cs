@@ -5,7 +5,7 @@ namespace Drawplate.Tests.Cli;
 
 internal static class CliProcess
 {
-    public static global::System.Diagnostics.Process Start(string executable, IReadOnlyList<string> arguments, IReadOnlyDictionary<string, string?>? environment = null)
+    public static global::System.Diagnostics.Process Start(string executable, IReadOnlyList<string> arguments, Dictionary<string, string?>? environment = null)
     {
         System.ArgumentNullException.ThrowIfNull(arguments);
         System.ArgumentNullException.ThrowIfNull(executable);
