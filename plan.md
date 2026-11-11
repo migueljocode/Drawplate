@@ -78,3 +78,36 @@ Behaviour of the failure paths is otherwise correct: staging is removed; T-INS-0
 - Scope = pure exit-code / output-stream fix in the PowerShell installer + tests if needed.
 - Do not reintroduce apt on Ubuntu. Do not use setup-ffmpeg on macOS ARM64.
 - If after fixing the Object[] issue a *different* wrong code appears, STOP and report with the new log line.
+
+
+## Restored repair stages R19–R20
+
+Source: the original roadmap in commit [87b50c2](https://github.com/migueljocode/Drawplate/blob/87b50c2a9063c5deb2cc5465a88617664e38af86/plan.md), which introduced repair stages R01–R20. These stage definitions were accidentally omitted by the focused R18 rewrite. They are restored here without changing their original scope.
+
+### R19 Documentation, release engineering, honest status
+
+- **Objective:** documents match reality; a tag produces verified artifacts. **Evidence:** B26, B27. Specification: sections H and I.6; old tasks T10.1 to T10.7.
+- **Files:** `README.md`, `docs/{FFMPEG,HARDWARE,MIGRATION,PROVENANCE,VNEAT-BASELINE}.md`, `docs/decisions/*`, `CHANGELOG.md`, `THIRD-PARTY-NOTICES.md`, `.github/workflows/release.yml`, `.github/dependabot.yml`, `PROGRESS.md`, `tests/Drawplate.Tests/Cli/ReadmeTests.cs`.
+- **Tasks:**
+  1. README per H.1 including the 13 "Troubleshooting FFmpeg" entries of H.2 and an options table checked against `OptionTable` by `ReadmeTests`; remove the reference to "section H.5".
+  2. `VNEAT-BASELINE.md` = the verified behavior notes of the research report (sections 5.2 to 5.4 and 6); if the Project doc is unreachable, STOP and ask the owner to paste them.
+  3. ADRs the old tasks name and that are missing (0002 name, 0004 and later from the T3 spikes): each records the spike actually performed; a spike that was not performed is recorded as [U].
+  4. `release.yml` (old T10.1), `dependabot.yml`, pinned action SHAs, CHANGELOG limited to what exists.
+  5. `PROGRESS.md`: rewrite so every claim has [V]/[I]/[U] and links to the run or command; list R01 to R20 with results; no APPROVED.
+- **Acceptance:** `ReadmeTests` pass; a dry-run tag on a fork produces archives, `SHA256SUMS` and attestation; no document describes an unbuilt feature.
+- **Tests:** `ReadmeTests`, release workflow run. **Depends:** R18.
+
+### R20 Acceptance on the target machine (owner, manual)
+
+- **Objective:** confirm the hypotheses H1 to H3 and sign off. **Machine:** Ubuntu 26.04, i5-5200U, GeForce 820M, VAAPI working.
+- **Evidence:** the target machine has never been run by the auditor; every hardware statement in this plan is [I] or [U] until this stage (Part 3, hypotheses H1 to H3).
+- **Tests:** manual, by the owner; the commands below are the test.
+- **Tasks (owner runs, pastes output into `docs/HARDWARE.md`; mark each result [V]):**
+  1. `ffmpeg -version | head -1`; `vainfo | grep -i -E 'H264.*Enc'`.
+  2. `drawplate -h`, `drawplate -V`, `drawplate -l` (expected: `vaapi` and `cpu`, no `nvenc`; `qsv` only if it truly works), `drawplate doctor`.
+  3. `drawplate --verbose -q 50 <short clip>`: the printed argv must contain `-vaapi_device /dev/dri/renderD…` and `format=nv12,hwupload`; the output plays and is H.264/AAC.
+  4. `drawplate -c <clip>` (no hardware probe, no note), `drawplate -e nvenc <clip>` (E-RUN-02, exit 1), Ctrl-C during a conversion (exit 130 within 5 s, no `.partial`).
+  5. `drawplate` in a folder with 2 clips, and `drawplate --ffmpeg-path /nope -l` (E-FF-02, exit 3).
+  6. If `-vaapi_device` is rejected by FFmpeg 8 (H3), STOP: the owner approves a new stage adding the `-init_hw_device` variant.
+- **Acceptance:** every step behaves as written; results committed to `docs/HARDWARE.md`; the owner adds R20 to the "Approved stages" line under table S.
+- **Depends:** R19.
