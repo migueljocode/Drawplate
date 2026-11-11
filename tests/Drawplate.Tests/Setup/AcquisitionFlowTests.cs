@@ -18,7 +18,7 @@ using Xunit;
 namespace Drawplate.Tests.Setup;
 
 [Collection("FakeExe")]
-public sealed class AcquisitionFlowTests
+public sealed partial class AcquisitionFlowTests
 {
     [Fact]
     [Trait("Tier", "T1")]
