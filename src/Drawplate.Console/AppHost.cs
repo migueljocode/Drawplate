@@ -17,6 +17,8 @@ using Drawplate.Models.Planning;
 using Drawplate.Models.Setup;
 using Drawplate.Services.Conversion;
 using Drawplate.Services.Ffmpeg;
+using Drawplate.Services.Interaction;
+using Drawplate.Services.Setup;
 using Drawplate.Services.Platform;
 using Drawplate.Services.Processes;
 
@@ -51,7 +53,7 @@ internal static class AppHost
         ArgumentNullException.ThrowIfNull(stderr);
 
         var parsed = ArgParser.Parse(args);
-        if (Dispatch(parsed, stdout, stderr) is { } early)
+        if (Dispatch(parsed, stdout, stderr, ct) is { } early)
         {
             return early;
         }
@@ -59,15 +61,65 @@ internal static class AppHost
         return RunConvert(parsed.Options!, stdout, stderr, ct);
     }
 
-    private static int? Dispatch(ParsedCommand parsed, TextWriter stdout, TextWriter stderr) => parsed.Kind switch
+    private static int? Dispatch(ParsedCommand parsed, TextWriter stdout, TextWriter stderr, CancellationToken ct) => parsed.Kind switch
     {
         CommandKind.Help => Print(stdout, HelpText.Render()),
         CommandKind.Version => Print(stdout, Messages.N_VERSION(VersionInfo.Current) + "\n"),
         CommandKind.Error => Fail(parsed.Error!, stderr),
-        CommandKind.Setup or CommandKind.Doctor => Fail(Messages.E_TEMP_01(), stderr),
-        _ when parsed.Options is { } o && (o.InstallDeps || o.Interactive || o.NoInstall) => Fail(Messages.E_TEMP_01(), stderr),
+        CommandKind.Setup => RunSetup(parsed.Options!, stdout, stderr, ct),
+        CommandKind.Doctor => RunDoctor(parsed.Options!, stdout, stderr, ct),
         _ => null,
     };
+
+    private static int RunSetup(RawOptions options, TextWriter stdout, TextWriter stderr, CancellationToken ct)
+    {
+        var platform = PlatformDetector.Detect(PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")), File.Exists);
+        var info = new FfmpegInfoService(new ProcessLauncher());
+        var flow = new AcquisitionFlow(info, CreatePrompt(), new InstallRunner(new ProcessLauncher()), platform, stdout, stderr);
+        var result = flow.RunAsync(AcquisitionMode.SetupCommand, options.InstallDeps, options.NoInstall, options.FfmpegPath, ct)
+            .GetAwaiter().GetResult();
+        return result.ExitCode;
+    }
+
+    private static int RunDoctor(RawOptions options, TextWriter stdout, TextWriter stderr, CancellationToken ct)
+    {
+        var platform = PlatformDetector.Detect(PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")), File.Exists);
+        var info = new FfmpegInfoService(new ProcessLauncher());
+        var report = new DoctorService(info, new ProcessLauncher(), platform)
+            .RunAsync(options.FfmpegPath, ct).GetAwaiter().GetResult();
+
+        foreach (var line in report.Lines)
+        {
+            stdout.WriteLine($"{line.Status,-8}  {line.Check,-10}  {line.Detail}");
+        }
+
+        if (report.Error is { } error)
+        {
+            WriteMessage(stderr, error);
+        }
+        else if (report.Lines.Any(line => line.Check == "FFmpeg" && line.Status == "missing"))
+        {
+            stderr.WriteLine(InstallAdvisor.NotFoundText(platform, InstallAdvisor.Suggestions(platform)));
+        }
+
+        return report.ExitCode;
+    }
+
+    private static IPrompt CreatePrompt() =>
+        new ConsolePrompt(
+            global::System.Console.In,
+            global::System.Console.Out,
+            !global::System.Console.IsInputRedirected,
+            !global::System.Console.IsOutputRedirected);
+
+    private static void WriteMessage(TextWriter stderr, Message message)
+    {
+        stderr.WriteLine(message.Text);
+        if (message.Hint is { } hint)
+        {
+            stderr.WriteLine($"  {hint}");
+        }
+    }
 
     private static int Print(TextWriter stdout, string text)
     {
@@ -96,6 +148,11 @@ internal static class AppHost
             return Fail(validation.Error!, stderr);
         }
 
+        if (options.Interactive && !CreatePrompt().IsInteractive)
+        {
+            return Fail(Messages.E_USAGE_10(), stderr);
+        }
+
         var renderer = new PlainRenderer(stdout, Utf8Output());
 
         // Input and output problems are reported before FFmpeg is touched, so they start no process.
@@ -110,25 +167,27 @@ internal static class AppHost
             work = plan;
         }
 
-        var candidate = FfmpegLocator.Locate(
+        var platformInfo = PlatformDetector.Detect(PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")), File.Exists, os);
+        var infoService = new FfmpegInfoService(new ProcessLauncher());
+        var acquisition = new AcquisitionFlow(
+            infoService,
+            CreatePrompt(),
+            new InstallRunner(new ProcessLauncher()),
+            platformInfo,
+            stdout,
+            stderr);
+        var acquired = acquisition.RunAsync(
+            AcquisitionMode.Convert,
+            options.InstallDeps,
+            options.NoInstall,
             options.FfmpegPath,
-            Environment.GetEnvironmentVariable("DRAWPLATE_FFMPEG"),
-            PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")),
-            File.Exists,
-            FfmpegLocator.EnumerateDirectories,
-            KnownFolders.For(os, Environment.GetEnvironmentVariable),
-            os);
-
-        if (candidate is null)
+            ct).GetAwaiter().GetResult();
+        if (acquired.Status == AcquisitionStatus.Exit)
         {
-            // Package managers are looked up only now, when FFmpeg is missing.
-            var platform = PlatformDetector.Detect();
-            var suggestions = InstallAdvisor.Suggestions(platform);
-            stderr.WriteLine(InstallAdvisor.NotFoundText(platform, suggestions));
-            return 3;
+            return acquired.ExitCode;
         }
 
-        var infoService = new FfmpegInfoService(new ProcessLauncher());
+        var candidate = acquired.Candidate!;
         var infoResult = infoService.GetInfoAsync(candidate.Path, ct).GetAwaiter().GetResult();
         if (infoResult.NotRunnable is { } notRunnable)
         {
@@ -152,6 +211,30 @@ internal static class AppHost
         }
 
         var chain = built.Chain;
+        if (options.Interactive)
+        {
+            var menu = new MenuService(CreatePrompt()).Run(working, convert.Quality, convert.MaxSize);
+            if (menu.Encoder is { } selected)
+            {
+                var selectedBuild = EncoderChain.Build(EncoderSets.Id(selected), os, working);
+                if (selectedBuild.Error is { } selectedError)
+                {
+                    return Fail(selectedError, stderr);
+                }
+                chain = selectedBuild.Chain;
+                convert = new ConvertOptions
+                {
+                    Encoder = selected,
+                    Quality = menu.Quality ?? convert.Quality,
+                    MaxSize = menu.MaxSize ?? convert.MaxSize,
+                    InputFolder = convert.InputFolder,
+                    Files = convert.Files,
+                    NoTimestamps = convert.NoTimestamps,
+                    OutputFolder = convert.OutputFolder
+                };
+            }
+        }
+
         if (chain.IsEmpty)
         {
             stderr.WriteLine(Messages.E_FF_03().Text);
