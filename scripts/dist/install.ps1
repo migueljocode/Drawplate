@@ -11,6 +11,17 @@ param(
     [switch]$Help
 )
 
+$script:InstallerArguments = @{
+    Version = $Version
+    Dir = $Dir
+    NoSetup = $NoSetup.IsPresent
+    Yes = $Yes.IsPresent
+    Uninstall = $Uninstall.IsPresent
+    From = $From
+    Sha256 = $Sha256
+    Help = $Help.IsPresent
+}
+
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -53,7 +64,7 @@ function Get-LatestTag([string]$BaseUrl) {
     }
 }
 
-function Download-HttpFile([string]$Url, [string]$Destination) {
+function Get-HttpFile([string]$Url, [string]$Destination) {
     Add-Type -AssemblyName System.Net.Http
     if ($PSVersionTable.PSEdition -ne 'Core') {
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
@@ -100,19 +111,19 @@ function Download-HttpFile([string]$Url, [string]$Destination) {
 }
 
 function Test-ProgramVersion([string]$Path, [string]$Expected) {
-    $start = [System.Diagnostics.Process]::new()StartInfo
+    $start = [System.Diagnostics.ProcessStartInfo]::new()
     $start.FileName = $Path
     $start.Arguments = '--version'
     $start.UseShellExecute = $false
     $start.RedirectStandardOutput = $true
     $start.RedirectStandardError = $true
-    $process = New-Object System.Diagnostics.Process
+    $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $start
     if (-not $process.Start()) {
         return $false
     }
     if (-not $process.WaitForExit(10000)) {
-        try { $process.Kill() } catch { }
+        try { $process.Kill() } catch { Write-InstallerError 'The timed-out process could not be stopped.' 'Stop it manually before retrying.' }
         return $false
     }
     $output = $process.StandardOutput.ReadToEnd().Trim()
@@ -124,22 +135,22 @@ function Invoke-DrawplateInstall {
     if (-not $repo) { $repo = 'migueljocode/Drawplate' }
     $baseUrl = $env:DRAWPLATE_BASE_URL
     if (-not $baseUrl) { $baseUrl = "https://github.com/$repo/releases" }
-    if (-not $Version) { $Version = $env:DRAWPLATE_VERSION }
-    if (-not $Dir) { $Dir = $env:DRAWPLATE_INSTALL_DIR }
-    if (-not $From) { $From = $env:DRAWPLATE_FROM_ARCHIVE }
-    if (-not $Sha256) { $Sha256 = $env:DRAWPLATE_SHA256 }
-    $noSetup = $NoSetup.IsPresent
-    $yes = $Yes.IsPresent
-    $uninstall = $Uninstall.IsPresent
+    if (-not $script:InstallerArguments.Version) { $script:InstallerArguments.Version = $env:DRAWPLATE_VERSION }
+    if (-not $script:InstallerArguments.Dir) { $script:InstallerArguments.Dir = $env:DRAWPLATE_INSTALL_DIR }
+    if (-not $script:InstallerArguments.From) { $script:InstallerArguments.From = $env:DRAWPLATE_FROM_ARCHIVE }
+    if (-not $script:InstallerArguments.Sha256) { $script:InstallerArguments.Sha256 = $env:DRAWPLATE_SHA256 }
+    $noSetup = [bool]$script:InstallerArguments.NoSetup
+    $yes = [bool]$script:InstallerArguments.Yes
+    $uninstall = [bool]$script:InstallerArguments.Uninstall
     if ($env:DRAWPLATE_NO_SETUP -eq '1' -or $env:DRAWPLATE_NO_SETUP -eq 'true') { $noSetup = $true }
     if ($env:DRAWPLATE_YES -eq '1' -or $env:DRAWPLATE_YES -eq 'true') { $yes = $true }
     if ($env:DRAWPLATE_UNINSTALL -eq '1' -or $env:DRAWPLATE_UNINSTALL -eq 'true') { $uninstall = $true }
 
-    if ($Help) {
+    if ($script:InstallerArguments.Help) {
         Write-Ui 'Usage: install.ps1 [-Version <tag>] [-Dir <folder>] [-NoSetup] [-Yes] [-Uninstall] [-From <archive> -Sha256 <hash>] [-Help]'
         return 0
     }
-    if ($From -and -not $Sha256) {
+    if ($script:InstallerArguments.From -and -not $script:InstallerArguments.Sha256) {
         Write-InstallerError '--sha256 is required with --from.' 'Provide the archive SHA-256 hash.'
         return 10
     }
@@ -153,7 +164,7 @@ function Invoke-DrawplateInstall {
     }
 
     $localAppData = $env:LOCALAPPDATA
-    $binDir = $Dir
+    $binDir = $script:InstallerArguments.Dir
     if (-not $binDir) { $binDir = Join-Path $localAppData 'Programs\Drawplate' }
     $dataDir = Join-Path $localAppData 'Drawplate'
     $binary = Join-Path $binDir 'drawplate.exe'
@@ -165,7 +176,7 @@ function Invoke-DrawplateInstall {
                 $saved = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
                 if ($saved.path) { $binary = [string]$saved.path }
             }
-            catch { }
+            catch { Write-InstallerError 'The operation could not complete.' 'Check the error details and retry.' }
         }
         Remove-Item -LiteralPath $binary -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath "$binary.old" -Force -ErrorAction SilentlyContinue
@@ -180,15 +191,15 @@ function Invoke-DrawplateInstall {
         return 0
     }
 
-    if (-not $Version) {
-        try { $Version = Get-LatestTag $baseUrl }
-        catch { $Version = '' }
+    if (-not $script:InstallerArguments.Version) {
+        try { $script:InstallerArguments.Version = Get-LatestTag $baseUrl }
+        catch { $script:InstallerArguments.Version = '' }
     }
     if (-not $Version) {
         Write-InstallerError "Could not find a release for $repo." 'Check your internet connection, or set DRAWPLATE_VERSION.'
         return 12
     }
-    $tag = $Version
+    $tag = $script:InstallerArguments.Version
     $pkgVersion = $tag.TrimStart('v')
     $rid = 'win-x64'
     $archive = "drawplate-$pkgVersion-$rid.zip"
@@ -228,14 +239,14 @@ function Invoke-DrawplateInstall {
         Write-Ui "[1/8] Detecting platform ..... [ok] $rid"
         Write-Ui "[2/8] Finding release ........ [ok] $tag"
         Write-Ui '[3/8] Downloading Drawplate ....'
-        if ($From) {
-            Copy-Item -LiteralPath $From -Destination $archivePath
-            $expectedHash = $Sha256.ToLowerInvariant()
+        if ($script:InstallerArguments.From) {
+            Copy-Item -LiteralPath $script:InstallerArguments.From -Destination $archivePath
+            $expectedHash = $script:InstallerArguments.Sha256.ToLowerInvariant()
         }
         else {
-            Download-HttpFile $url $archivePath
+            Get-HttpFile $url $archivePath
             $sumsPath = Join-Path $staging 'SHA256SUMS'
-            Download-HttpFile "$baseUrl/download/$tag/SHA256SUMS" $sumsPath
+            Get-HttpFile "$baseUrl/download/$tag/SHA256SUMS" $sumsPath
             $line = Get-Content -LiteralPath $sumsPath | Where-Object { $_ -match [regex]::Escape($archive) } | Select-Object -First 1
             if (-not $line) {
                 Write-InstallerError "Checksum mismatch for $archive." 'Nothing was installed. Retry; if it repeats, report it.'
@@ -316,11 +327,11 @@ function Invoke-DrawplateInstall {
             Write-Ui 'FFmpeg was not found on this machine.'
             $answer = Read-Host "Run 'drawplate setup' now? [Y/n]"
             if ($answer -ne 'n' -and $answer -ne 'N') {
-                try { & $binary setup } catch { }
+                try { & $binary setup } catch { Write-InstallerError 'Could not run Drawplate setup.' 'Run drawplate setup manually.' }
             }
         }
         elseif ($yes) {
-            try { & $binary setup } catch { }
+            try { & $binary setup } catch { Write-InstallerError 'Could not run Drawplate setup.' 'Run drawplate setup manually.' }
         }
         return 0
     }
