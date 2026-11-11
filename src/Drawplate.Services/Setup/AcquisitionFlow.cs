@@ -5,7 +5,6 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Drawplate.Models.Cli;
-using Drawplate.Models.Encoding;
 using Drawplate.Models.Setup;
 using Drawplate.Services.Ffmpeg;
 using Drawplate.Services.Interaction;
@@ -33,21 +32,29 @@ public sealed class AcquisitionFlow
     private readonly IPrompt _prompt;
     private readonly InstallRunner _installRunner;
     private readonly PlatformInfo _platform;
+    private readonly TextWriter _stdout;
+    private readonly TextWriter _stderr;
 
     public AcquisitionFlow(
         FfmpegInfoService infoService,
         IPrompt prompt,
         InstallRunner installRunner,
-        PlatformInfo platform)
+        PlatformInfo platform,
+        TextWriter stdout,
+        TextWriter stderr)
     {
         ArgumentNullException.ThrowIfNull(infoService);
         ArgumentNullException.ThrowIfNull(prompt);
         ArgumentNullException.ThrowIfNull(installRunner);
         ArgumentNullException.ThrowIfNull(platform);
+        ArgumentNullException.ThrowIfNull(stdout);
+        ArgumentNullException.ThrowIfNull(stderr);
         _infoService = infoService;
         _prompt = prompt;
         _installRunner = installRunner;
         _platform = platform;
+        _stdout = stdout;
+        _stderr = stderr;
     }
 
     public async Task<AcquisitionOutcome> RunAsync(
@@ -57,156 +64,165 @@ public sealed class AcquisitionFlow
         string? ffmpegPath,
         CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(ffmpegPath);
+        var candidate = Locate(ffmpegPath);
+        var info = candidate is null
+            ? null
+            : await _infoService.GetInfoAsync(candidate.Path, ct).ConfigureAwait(false);
 
-        var pathVar = Environment.GetEnvironmentVariable("DRAWPLATE_FFMPEG");
-        var candidate = FfmpegLocator.Locate(
-            ffmpegPath,
-            pathVar,
-            PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")),
-            File.Exists,
-            FfmpegLocator.EnumerateDirectories,
-            KnownFolders.For(_platform.Os, Environment.GetEnvironmentVariable),
-            _platform.Os);
+        if (info?.Info is not null)
+        {
+            if (mode == AcquisitionMode.SetupCommand)
+            {
+                _stdout.WriteLine("FFmpeg is already installed.");
+                return Exit(0);
+            }
 
-        // Step 1: -n / never install
-        if (neverInstall || mode == AcquisitionMode.SetupCommand && candidate is null)
+            return Found(candidate!);
+        }
+
+        // An explicit path or environment override is authoritative: do not silently install
+        // another FFmpeg when the user's selected executable is broken.
+        if (candidate is not null
+            && candidate.Source is FfmpegSource.Argument or FfmpegSource.Environment)
+        {
+            WriteInfoFailure(candidate.Path, info!);
+            return Exit(3);
+        }
+
+        if (neverInstall)
         {
             if (candidate is null)
             {
-                var suggestions = InstallAdvisor.Suggestions(_platform);
-                WriteNotFound(suggestions);
-                return new AcquisitionOutcome { Status = AcquisitionStatus.Exit, ExitCode = 3 };
+                WriteNotFound();
             }
-        }
-
-        // Candidate found and usable
-        if (candidate is not null)
-        {
-            var info = await _infoService.GetInfoAsync(candidate.Path, ct).ConfigureAwait(false);
-            if (info.Info is not null)
+            else
             {
-                if (mode == AcquisitionMode.SetupCommand)
-                {
-                    WriteN_SETUP_01();
-                    return new AcquisitionOutcome { Status = AcquisitionStatus.Exit, ExitCode = 0 };
-                }
-                return new AcquisitionOutcome { Status = AcquisitionStatus.Found, Candidate = candidate, ExitCode = 0 };
+                WriteInfoFailure(candidate.Path, info!);
             }
+            return Exit(3);
         }
 
-        // FFmpeg missing or unusable
-        if (mode == AcquisitionMode.SetupCommand)
-        {
-            // setup runs flow even when present; already handled above if usable
-        }
+        var suggestions = InstallAdvisor.Suggestions(_platform);
+        var runnable = suggestions.FirstOrDefault(s => s.RunnableByApp);
 
-        // -n: no install
-        if (neverInstall)
-        {
-            var suggestions = InstallAdvisor.Suggestions(_platform);
-            WriteNotFound(suggestions);
-            return new AcquisitionOutcome { Status = AcquisitionStatus.Exit, ExitCode = 3 };
-        }
-
-        // -y: assume yes
         if (assumeYes)
         {
-            var suggestions = InstallAdvisor.Suggestions(_platform);
-            var runnable = suggestions.FirstOrDefault(s => s.RunnableByApp);
-            if (runnable is not null)
+            if (runnable is null)
             {
-                var result = await _installRunner.RunAsync(runnable, ct).ConfigureAwait(false);
-                if (result.ExitCode == 0)
-                {
-                    var info2 = await _infoService.GetInfoAsync(candidate?.Path ?? ffmpegPath, ct).ConfigureAwait(false);
-                    if (info2.Info is not null)
-                    {
-                        WriteN_OK_01();
-                        return new AcquisitionOutcome { Status = AcquisitionStatus.Found, Candidate = candidate, ExitCode = 0 };
-                    }
-                }
-                WriteE_FF_08(result.ExitCode ?? -1);
-                return new AcquisitionOutcome { Status = AcquisitionStatus.Exit, ExitCode = 3 };
+                WriteNotFound();
+                return Exit(3);
             }
-            // none runnable
-            var suggestions2 = InstallAdvisor.Suggestions(_platform);
-            WriteNotFound(suggestions2);
-            return new AcquisitionOutcome { Status = AcquisitionStatus.Exit, ExitCode = 3 };
+
+            return await InstallAndRelocateAsync(runnable, mode, ffmpegPath, ct).ConfigureAwait(false);
         }
 
-        // Interactive terminal
         if (_prompt.IsInteractive)
         {
-            var suggestions = InstallAdvisor.Suggestions(_platform);
-            WriteNotFound(suggestions);
-            var runnable = suggestions.FirstOrDefault(s => s.RunnableByApp);
-            if (runnable is not null)
+            WriteNotFound();
+            if (runnable is null || !_prompt.Confirm("Run it now?", true))
             {
-                var confirmed = _prompt.Confirm("Run it now?", true);
-                if (confirmed)
-                {
-                    var result = await _installRunner.RunAsync(runnable, ct).ConfigureAwait(false);
-                    if (result.ExitCode == 0)
-                    {
-                        var info2 = await _infoService.GetInfoAsync(candidate?.Path ?? ffmpegPath, ct).ConfigureAwait(false);
-                        if (info2.Info is not null)
-                        {
-                            WriteN_OK_01();
-                            return new AcquisitionOutcome { Status = AcquisitionStatus.Found, Candidate = candidate, ExitCode = 0 };
-                        }
-                        WriteE_FF_04();
-                        return new AcquisitionOutcome { Status = AcquisitionStatus.Exit, ExitCode = 3 };
-                    }
-                    WriteE_FF_08(result.ExitCode ?? -1);
-                    return new AcquisitionOutcome { Status = AcquisitionStatus.Exit, ExitCode = 3 };
-                }
-                // user said no
-                return new AcquisitionOutcome { Status = AcquisitionStatus.Exit, ExitCode = 3 };
+                return Exit(3);
             }
+
+            return await InstallAndRelocateAsync(runnable, mode, ffmpegPath, ct).ConfigureAwait(false);
         }
 
-        // Non-interactive
-        var suggestions3 = InstallAdvisor.Suggestions(_platform);
-        WriteNotFound(suggestions3);
-        return new AcquisitionOutcome { Status = AcquisitionStatus.Exit, ExitCode = 3 };
+        WriteNotFound();
+        return Exit(3);
     }
 
-    private static void WriteNotFound(ImmutableArray<InstallSuggestion> suggestions)
+    private async Task<AcquisitionOutcome> InstallAndRelocateAsync(
+        InstallSuggestion suggestion,
+        AcquisitionMode mode,
+        string? ffmpegPath,
+        CancellationToken ct)
     {
-        // Build platform-specific text - simplified
-        var text = "FFmpeg was not found.\n\nInstall it with your package manager:\n";
-        foreach (var s in suggestions)
+        var result = await _installRunner.RunAsync(suggestion, ct).ConfigureAwait(false);
+        if (!result.Started || result.ExitCode != 0)
         {
-            foreach (var line in s.DisplayLines)
-            {
-                text += line + "\n";
-            }
+            WriteInstallFailure(result.ExitCode ?? -1);
+            return Exit(3);
         }
-        global::System.Console.Error.WriteLine(text);
+
+        // Package managers can install into a known folder without changing this process's PATH.
+        var candidate = Locate(ffmpegPath);
+        if (candidate is null)
+        {
+            WriteNotFoundAfterInstall();
+            return Exit(3);
+        }
+
+        var info = await _infoService.GetInfoAsync(candidate.Path, ct).ConfigureAwait(false);
+        if (info.Info is null)
+        {
+            WriteNotFoundAfterInstall();
+            return Exit(3);
+        }
+
+        if (mode == AcquisitionMode.SetupCommand)
+        {
+            _stdout.WriteLine("FFmpeg installed.");
+            return Exit(0);
+        }
+
+        _stdout.WriteLine("FFmpeg installed.");
+        return Found(candidate);
     }
 
-    private static void WriteN_SETUP_01()
+    private FfmpegCandidate? Locate(string? ffmpegPath)
     {
-        global::System.Console.WriteLine("FFmpeg is already installed.");
+        var os = _platform.Os;
+        return FfmpegLocator.Locate(
+            ffmpegPath,
+            Environment.GetEnvironmentVariable("DRAWPLATE_FFMPEG"),
+            PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")),
+            File.Exists,
+            FfmpegLocator.EnumerateDirectories,
+            KnownFolders.For(os, Environment.GetEnvironmentVariable),
+            os);
     }
 
-    private static void WriteN_OK_01()
+    private void WriteNotFound() =>
+        _stderr.WriteLine(InstallAdvisor.NotFoundText(_platform, InstallAdvisor.Suggestions(_platform)));
+
+    private void WriteInfoFailure(string path, FfmpegInfoResult result)
     {
-        global::System.Console.WriteLine("FFmpeg installed.");
+        if (result.TooOld is { } tooOld)
+        {
+            var message = Messages.E_FF_07(path, tooOld.Version.ToString());
+            WriteMessage(message);
+            return;
+        }
+
+        WriteMessage(Messages.E_FF_02(path, result.NotRunnable?.Reason ?? "unknown"));
     }
 
-    private static void WriteE_FF_04()
+    private void WriteMessage(Message message)
     {
-        global::System.Console.Error.WriteLine("FFmpeg was installed, but Drawplate cannot find it yet.");
-        global::System.Console.Error.WriteLine("  Open a new terminal and run Drawplate again. Run 'drawplate doctor' to see where it looks.");
+        _stderr.WriteLine(message.Text);
+        if (message.Hint is { } hint)
+        {
+            _stderr.WriteLine($"  {hint}");
+        }
     }
 
-    private static void WriteE_FF_08(int code)
+    private void WriteNotFoundAfterInstall()
     {
-        global::System.Console.Error.WriteLine($"The install command failed (exit code {code}).");
-        global::System.Console.Error.WriteLine("  See \"Troubleshooting FFmpeg\" in the README.");
+        _stderr.WriteLine("FFmpeg was installed, but Drawplate cannot find it yet.");
+        _stderr.WriteLine("  Open a new terminal and run Drawplate again. Run 'drawplate doctor' to see where it looks.");
     }
+
+    private void WriteInstallFailure(int code)
+    {
+        _stderr.WriteLine($"The install command failed (exit code {code}).");
+        _stderr.WriteLine("  See \"Troubleshooting FFmpeg\" in the README.");
+    }
+
+    private static AcquisitionOutcome Found(FfmpegCandidate candidate) =>
+        new() { Status = AcquisitionStatus.Found, Candidate = candidate, ExitCode = 0 };
+
+    private static AcquisitionOutcome Exit(int code) =>
+        new() { Status = AcquisitionStatus.Exit, ExitCode = code };
 }
 
 public enum AcquisitionMode
