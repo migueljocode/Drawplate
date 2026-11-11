@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections.Immutable;
 
 using Drawplate.Models.Encoding;
 using Drawplate.Services.Interaction;
@@ -78,14 +79,15 @@ public sealed class MenuTests
     private sealed class ScriptedPrompt(IEnumerable<string?> answers, bool interactive = true) : IPrompt
     {
         private readonly Queue<string?> _answers = new(answers);
-        public List<string> Asked { get; } = [];
+        private readonly List<string> _asked = [];
+        public ImmutableArray<string> Asked => _asked.ToImmutableArray();
         public bool IsInteractive { get; } = interactive;
 
         public bool Confirm(string question, bool defaultYes) => defaultYes;
 
         public string? Ask(string label, string? current)
         {
-            Asked.Add(label);
+            _asked.Add(label);
             var answer = _answers.Count == 0 ? null : _answers.Dequeue();
             return string.IsNullOrEmpty(answer) ? current : answer;
         }
