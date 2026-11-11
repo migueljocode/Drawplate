@@ -70,12 +70,12 @@ public sealed class DoctorTests
     [Trait("Tier", "T1")]
     public async Task NoFfprobe_StillOk()
     {
-        var report = await RunAsync(InfoScript(true), gpu: false).ConfigureAwait(true);
+        var report = await RunAsync(InfoScript(true), gpu: false, noFfprobe: true).ConfigureAwait(true);
 
         Assert.Equal(0, report.ExitCode);
         var ffprobe = Assert.Single(report.Lines, line => line.Check == "ffprobe");
         Assert.Equal("ok", ffprobe.Status);
-        Assert.Contains("optional", ffprobe.Detail, StringComparison.Ordinal);
+        Assert.Equal("not found (optional; durations come from ffmpeg)", ffprobe.Detail);
     }
 
     [Fact]
@@ -112,7 +112,8 @@ public sealed class DoctorTests
         string? script,
         bool gpu,
         bool missing = false,
-        FfmpegCandidate? candidate = null)
+        FfmpegCandidate? candidate = null,
+        bool noFfprobe = false)
     {
         var oldGpu = GpuDetector.Override;
         var scriptPath = script is null ? null : FakeExeHarness.WriteScript(script.Split('\n'));
@@ -133,7 +134,8 @@ public sealed class DoctorTests
                 new FfmpegInfoService(new ProcessLauncher()),
                 new ProcessLauncher(),
                 platform,
-                _ => missing ? null : candidate ?? new FfmpegCandidate(wrapper!, FfmpegSource.Argument));
+                _ => missing ? null : candidate ?? new FfmpegCandidate(wrapper!, FfmpegSource.Argument),
+                noFfprobe ? _ => null : null);
             return await service.RunAsync(wrapper, CancellationToken.None).ConfigureAwait(true);
         }
         finally
