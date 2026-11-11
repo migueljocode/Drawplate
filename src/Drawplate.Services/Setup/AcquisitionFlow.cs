@@ -193,7 +193,7 @@ public sealed class AcquisitionFlow
     {
         if (result.TooOld is { } tooOld)
         {
-            var message = Messages.E_FF_07(path, tooOld.Version.ToString());
+            var message = Messages.E_FF_07(tooOld.Version.ToString(), _platform.Os);
             await WriteMessageAsync(message).ConfigureAwait(false);
             return;
         }
