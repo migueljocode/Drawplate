@@ -227,7 +227,7 @@ internal static class AppHost
                 return Fail(menuError, stderr);
             }
 
-            var selected = menu.Encoder ?? convert.Encoder;
+            var selected = menu.Encoder;
             if (selected is { } selectedEncoder)
             {
                 var selectedBuild = EncoderChain.Build(EncoderSets.Id(selectedEncoder), os, working);
