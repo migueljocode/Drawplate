@@ -217,6 +217,11 @@ internal static class AppHost
         if (options.Interactive)
         {
             var menu = new MenuService(CreatePrompt(stdout)).Run(working, convert.Quality, convert.MaxSize);
+            if (menu.Error is { } menuError)
+            {
+                return Fail(menuError, stderr);
+            }
+
             var selected = menu.Encoder ?? convert.Encoder;
             if (selected is { } selectedEncoder)
             {
