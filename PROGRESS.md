@@ -197,9 +197,10 @@ Result: DONE. CI run 42928618632 (before this docs commit): ubuntu, macos, windo
 
 ### R14 Setup, doctor, interactive menu, install flags
 Result: IN PROGRESS.
-[I] Implemented the acquisition flow with nullable FFmpeg path handling, injected output writers, exact platform install guidance, and post-install relocation/revalidation.
-[I] Implemented asynchronous doctor diagnostics for FFmpeg source/version, libx264, optional ffprobe, working encoders, and hardware notes.
+[I] Implemented the acquisition flow with nullable FFmpeg path handling, injected output writers, platform install guidance, and post-install relocation/revalidation.
+[I] Implemented asynchronous doctor diagnostics for FFmpeg source/version, libx264, optional ffprobe, working encoders, and hardware notes. Doctor now exits 3 when neither libx264 nor a hardware encoder is usable.
 [I] Wired `setup`, `doctor`, `-y`, `-n`, and `-m` into AppHost; added the no-elevation source guard.
-[U] Full R14 acquisition/doctor/menu acceptance tests are not yet implemented.
-[V] CI build and format pass on Ubuntu, macOS and Windows (run 42955943854, commit f0ac30e). Ubuntu test suite passes in that run.
-[U] macOS and Windows test jobs are still running; the full R14 acceptance suite is not implemented yet. Do not treat R14 as complete until the full acceptance list in plan.md passes.
+[I] Added Setup acceptance coverage: `AcquisitionFlowTests`, `DoctorTests`, `MenuTests`, and `SetupCliTests`; injected locator seams allow deterministic acquisition/doctor scenarios. Menu now validates encoder, quality and size answers and propagates catalog messages.
+[V] Latest completed CI run 42956143819 (commit 93016d34): Ubuntu, macOS and Windows build, format, test, publish and binary verification all passed.
+[U] The newly added R14 tests and subsequent production fixes have not yet been verified by CI. Dedicated scenarios for successful install/relocation, exact doctor output, CLI `-y`, and the complete menu flow still need a fresh green run and any fixes it reveals.
+[U] R14 is not complete until every acceptance test in the R14 section of plan.md passes.
