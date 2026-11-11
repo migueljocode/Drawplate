@@ -8,6 +8,7 @@ on:
 jobs:
   build-test-publish:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -36,17 +37,21 @@ jobs:
       - name: Verify formatting
         run: dotnet format src/Drawplate.slnx --verify-no-changes
 
-      - name: Install FFmpeg (ubuntu)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update -y && sudo apt-get install -y ffmpeg
+      # Linux + Windows: cached static binaries (avoids apt hang on ubuntu-latest).
+      # macOS: setup-ffmpeg does NOT support Darwin ARM64 (macos-latest is arm64;
+      # evermeet.cx has no arm64 builds — FedericoCarboni/setup-ffmpeg#21).
+      # Use Homebrew on macOS instead (~20–30s, native arm64).
+      - name: Setup FFmpeg (Linux/Windows)
+        if: runner.os != 'macOS'
+        uses: FedericoCarboni/setup-ffmpeg@v3
+        with:
+          ffmpeg-version: release
+          github-token: ${{ github.token }}
 
-      - name: Install FFmpeg (macOS)
+      - name: Setup FFmpeg (macOS)
         if: runner.os == 'macOS'
+        timeout-minutes: 5
         run: brew install ffmpeg
-
-      - name: Install FFmpeg (Windows)
-        if: runner.os == 'Windows'
-        run: choco install ffmpeg -y
 
       - name: Test
         run: dotnet test tests/Drawplate.Tests -c Release --logger "trx;LogFileName=results.trx" --results-directory TestResults

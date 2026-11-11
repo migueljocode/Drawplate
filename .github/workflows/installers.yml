@@ -1,0 +1,110 @@
+name: Installer CI
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/installers.yml'
+
+jobs:
+  generated-up-to-date:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871
+      - name: Generate with PowerShell 7
+        shell: pwsh
+        run: ./scripts/build-installers.ps1
+      - name: Verify generated files
+        shell: pwsh
+        run: git diff --exit-code -- scripts/dist
+      - name: Compare PowerShell 5.1 generation
+        shell: powershell
+        run: |
+          ./scripts/build-installers.ps1
+          git diff --exit-code -- scripts/dist
+
+  shell-ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871
+      - uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d
+        with:
+          global-json-file: global.json
+      - name: Install ShellCheck
+        run: sudo apt-get update -y && sudo apt-get install -y shellcheck
+      - name: Publish test binary
+        run: dotnet publish src/Drawplate.Console -c Release -r linux-x64 -p:Version=1.2.3 -o out
+      - name: Run POSIX tests
+        shell: bash
+        env:
+          DRAWPLATE_TEST_BINARY: out/drawplate
+          DRAWPLATE_TEST_RID: linux-x64
+        run: |
+          shellcheck scripts/dist/install.sh
+          sh scripts/tests/sh/run.sh
+          sh scripts/tests/sh/progress.sh
+
+  shell-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871
+      - uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d
+        with:
+          global-json-file: global.json
+      - name: Install ShellCheck
+        run: brew install shellcheck
+      - name: Publish test binary
+        run: dotnet publish src/Drawplate.Console -c Release -r osx-arm64 -p:Version=1.2.3 -o out
+      - name: Run POSIX tests
+        shell: bash
+        env:
+          DRAWPLATE_TEST_BINARY: out/drawplate
+          DRAWPLATE_TEST_RID: osx-arm64
+        run: |
+          shellcheck scripts/dist/install.sh
+          sh scripts/tests/sh/run.sh
+          sh scripts/tests/sh/progress.sh
+
+  windows-powershell-51:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871
+      - uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d
+        with:
+          global-json-file: global.json
+      - name: Install analysis and test modules
+        shell: powershell
+        run: |
+          Install-Module Pester -MinimumVersion 5.0 -Scope CurrentUser -Force
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+      - name: Publish test binary
+        shell: powershell
+        run: dotnet publish src/Drawplate.Console -c Release -r win-x64 -p:Version=1.2.3 -o out
+      - name: Analyze installer
+        shell: powershell
+        run: Invoke-ScriptAnalyzer -Path scripts/dist/install.ps1 -Settings scripts/PSScriptAnalyzerSettings.psd1 -EnableExit
+      - name: Run Pester tests
+        shell: powershell
+        run: Invoke-Pester scripts/tests/ps1 -CI
+
+  windows-pwsh-7:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871
+      - uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d
+        with:
+          global-json-file: global.json
+      - name: Install analysis and test modules
+        shell: pwsh
+        run: |
+          Install-Module Pester -MinimumVersion 5.0 -Scope CurrentUser -Force
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+      - name: Publish test binary
+        shell: pwsh
+        run: dotnet publish src/Drawplate.Console -c Release -r win-x64 -p:Version=1.2.3 -o out
+      - name: Analyze installer
+        shell: pwsh
+        run: Invoke-ScriptAnalyzer -Path scripts/dist/install.ps1 -Settings scripts/PSScriptAnalyzerSettings.psd1 -EnableExit
+      - name: Run Pester tests
+        shell: pwsh
+        run: Invoke-Pester scripts/tests/ps1 -CI
