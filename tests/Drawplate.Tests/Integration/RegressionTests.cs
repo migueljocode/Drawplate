@@ -52,7 +52,7 @@ public sealed class RegressionTests
                 Assert.Contains("Video: h264", probe.Stderr, StringComparison.OrdinalIgnoreCase);
                 Assert.Contains("yuv420p", probe.Stderr, StringComparison.OrdinalIgnoreCase);
                 Assert.Contains("Audio: aac", probe.Stderr, StringComparison.OrdinalIgnoreCase);
-                var dimensions = Regex.Match(probe.Stderr, @"(?<width>\d{2,5})x(?<height>\d{2,5})");
+                var dimensions = Regex.Match(probe.Stderr, @"Video:.*?\b(?<width>\d{2,5})x(?<height>\d{2,5})\b", RegexOptions.Singleline);
                 Assert.True(dimensions.Success, $"Could not read dimensions for {name}.");
                 var width = int.Parse(dimensions.Groups["width"].Value, CultureInfo.InvariantCulture);
                 var height = int.Parse(dimensions.Groups["height"].Value, CultureInfo.InvariantCulture);

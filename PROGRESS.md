@@ -222,5 +222,6 @@ Result: IN PROGRESS.
 [V] CI run 42964887540: build, format, tests, publish and binary verification passed on Ubuntu, macOS and Windows. Ubuntu/macOS: 410 passed, 1 skipped; Windows: 404 passed, 7 skipped.
 [V] CI run 42965328794: Ubuntu build + format + tests passed (410 passed, 1 skipped); macOS build + format passed, but the new even-dimension assertion failed (409 passed, 1 failed, 1 skipped). Windows test run is pending/completing.
 [V] CI run 42965618960: Ubuntu build exposed two incorrect xUnit assertion overloads in the new diagnostic; corrected to Assert.True with explicit messages. The same run exposed an unrelated setup-test failure while the new CLI exception test changed global Console.Error; removed that global-console test to avoid cross-test interference.
-[I] Added output-dimension diagnostics to identify which source produces an odd-width output; investigate before changing product code.
+[V] CI run 42966012342: Ubuntu and Windows passed all checks (Ubuntu: 410 passed, 1 skipped; Windows: 404 passed, 7 skipped). macOS: 408 passed, 1 failed, 1 skipped; failure was the test regex matching unrelated metadata before the Video stream dimensions.
+[I] Anchored the dimension parser to FFmpeg's Video stream line; rerunning all three OS.
 [U] Remaining review: confirm the 14-row CLI matrix matches every applicable Part 3 row and the plan's missing-file check; R16 is not complete.
