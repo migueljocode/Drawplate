@@ -162,7 +162,7 @@ internal static class AppHost
 
         // Input and output problems are reported before FFmpeg is touched, so they start no process.
         WorkPlan? work = null;
-        if (!options.ListEncoders)
+        if (!options.ListEncoders && !options.Interactive)
         {
             var (plan, exit) = PlanWork(convert, os, renderer, stderr);
             if (exit is { } planExit)
@@ -248,6 +248,16 @@ internal static class AppHost
                 NoTimestamps = convert.NoTimestamps,
                 OutputFolder = convert.OutputFolder
             };
+        }
+
+        if (!options.ListEncoders && work is null)
+        {
+            var (plan, exit) = PlanWork(convert, os, renderer, stderr);
+            if (exit is { } planExit)
+            {
+                return planExit;
+            }
+            work = plan;
         }
 
         if (chain.IsEmpty)
