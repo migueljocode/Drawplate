@@ -213,7 +213,7 @@ internal static class AppHost
         var chain = built.Chain;
         if (options.Interactive)
         {
-            var menu = new MenuService(CreatePrompt()).Run(working, convert.Quality, convert.MaxSize);
+            var menu = new MenuService(CreatePrompt(stdout)).Run(working, convert.Quality, convert.MaxSize);
             var selected = menu.Encoder ?? convert.Encoder;
             if (selected is { } selectedEncoder)
             {
