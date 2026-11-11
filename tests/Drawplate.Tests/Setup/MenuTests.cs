@@ -13,7 +13,7 @@ public sealed class MenuTests
     [Trait("Tier", "T0")]
     public void Defaults_AcceptedWithEmptyAnswers()
     {
-        var prompt = new ScriptedPrompt(["1 auto, 2 nvenc, 3 cpu", "50", "none"]);
+        var prompt = new ScriptedPrompt(["", "", ""]);
         var result = new MenuService(prompt).Run([EncoderKind.Nvenc, EncoderKind.Cpu], 50, SizeCap.None);
 
         Assert.Null(result.Error);
@@ -86,7 +86,8 @@ public sealed class MenuTests
         public string? Ask(string label, string? current)
         {
             Asked.Add(label);
-            return _answers.Count == 0 ? current : _answers.Dequeue();
+            var answer = _answers.Count == 0 ? null : _answers.Dequeue();
+            return string.IsNullOrEmpty(answer) ? current : answer;
         }
     }
 }
