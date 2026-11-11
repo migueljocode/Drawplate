@@ -27,6 +27,9 @@ Result: **IN PROGRESS** (focused plan rewritten on this branch).
 [I] Repair implementation and reordered diagnostics committed in 72388b4; awaiting Installer CI and general CI on the updated branch tip.
 [U] Final green Installer CI run required before marking R18 DONE.
 
+
+[V] Step 2 traced the Windows `System.Object[]` exit failure to `$response.EnsureSuccessStatusCode()` emitting its returned `HttpResponseMessage` from `Get-HttpFile`; suppressed that non-contract output with `[void]` in source and generated distribution. Awaiting both Windows-shell verification.
+
 ## Unverified
 
 ## Blocked
