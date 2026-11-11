@@ -71,6 +71,44 @@ public sealed class SetupCliTests
         }
     }
 
+    [Fact]
+    [Trait("Tier", "T1")]
+    public async Task Cli_Menu_NonInteractive_Exit2()
+    {
+        var result = await RunCliAsync(["-m"]);
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Contains("Interactive mode needs a terminal.", result.Stderr, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("Tier", "T1")]
+    public async Task Cli_Doctor_FfmpegPresent_Exit0()
+    {
+        var script = FakeExeHarness.WriteScript([
+            "{\"if\":\"-version\",\"stdout\":\"ffmpeg version 6.1.1\\n\"}",
+            "{\"if\":\"-encoders\",\"stdout\":\" V..... libx264\\n\"}",
+            "{\"exit\":0}"
+        ]);
+        var wrapper = FakeExeHarness.CreateWrapper();
+        Environment.SetEnvironmentVariable("FAKE_EXE_SCRIPT", script);
+        try
+        {
+            var result = await RunCliAsync(["doctor", "--ffmpeg-path", wrapper]);
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.Contains("FFmpeg", result.Stdout, StringComparison.Ordinal);
+            Assert.Contains("libx264", result.Stdout, StringComparison.Ordinal);
+            Assert.Contains("Encoders", result.Stdout, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("FAKE_EXE_SCRIPT", null);
+            File.Delete(script);
+            File.Delete(wrapper);
+        }
+    }
+
     private static async Task<CliResult> RunCliAsync(string[] arguments)
     {
         var testDirectory = Path.GetDirectoryName(typeof(SetupCliTests).Assembly.Location)!;
