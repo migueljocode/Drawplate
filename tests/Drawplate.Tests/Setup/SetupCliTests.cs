@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 
@@ -41,19 +42,17 @@ public sealed class SetupCliTests
         Directory.CreateDirectory(programData);
         await File.WriteAllTextAsync(Path.Combine(folder, "winget.cmd"), "@echo off\r\nexit /b 0\r\n").ConfigureAwait(true);
 
-        var oldPath = Environment.GetEnvironmentVariable("PATH");
-        var oldLocal = Environment.GetEnvironmentVariable("LOCALAPPDATA");
-        var oldUser = Environment.GetEnvironmentVariable("USERPROFILE");
-        var oldProgramData = Environment.GetEnvironmentVariable("ProgramData");
-        var oldFfmpeg = Environment.GetEnvironmentVariable("DRAWPLATE_FFMPEG");
-        Environment.SetEnvironmentVariable("PATH", folder);
-        Environment.SetEnvironmentVariable("LOCALAPPDATA", localAppData);
-        Environment.SetEnvironmentVariable("USERPROFILE", userProfile);
-        Environment.SetEnvironmentVariable("ProgramData", programData);
-        Environment.SetEnvironmentVariable("DRAWPLATE_FFMPEG", null);
+        var environment = new Dictionary<string, string?>
+        {
+            ["PATH"] = folder,
+            ["LOCALAPPDATA"] = localAppData,
+            ["USERPROFILE"] = userProfile,
+            ["ProgramData"] = programData,
+            ["DRAWPLATE_FFMPEG"] = null
+        };
         try
         {
-            var result = await RunCliAsync(["setup", "-n"]).ConfigureAwait(true);
+            var result = await RunCliAsync(["setup", "-n"], environment).ConfigureAwait(true);
 
             Assert.Equal(3, result.ExitCode);
             Assert.Contains("FFmpeg was not found.", result.Stderr, StringComparison.Ordinal);
@@ -61,11 +60,6 @@ public sealed class SetupCliTests
         }
         finally
         {
-            Environment.SetEnvironmentVariable("PATH", oldPath);
-            Environment.SetEnvironmentVariable("LOCALAPPDATA", oldLocal);
-            Environment.SetEnvironmentVariable("USERPROFILE", oldUser);
-            Environment.SetEnvironmentVariable("ProgramData", oldProgramData);
-            Environment.SetEnvironmentVariable("DRAWPLATE_FFMPEG", oldFfmpeg);
             Directory.Delete(folder, recursive: true);
         }
     }
@@ -182,7 +176,7 @@ public sealed class SetupCliTests
         }
     }
 
-    private static async Task<CliResult> RunCliAsync(string[] arguments)
+    private static async Task<CliResult> RunCliAsync(string[] arguments, IReadOnlyDictionary<string, string?>? environment = null)
     {
         var testDirectory = Path.GetDirectoryName(typeof(SetupCliTests).Assembly.Location)!;
         var assembly = Path.Combine(testDirectory, "drawplate.dll");
@@ -197,7 +191,7 @@ public sealed class SetupCliTests
             dotnet = "dotnet";
         }
 
-        using var process = CliProcess.Start(dotnet, [assembly, .. arguments]);
+        using var process = CliProcess.Start(dotnet, [assembly, .. arguments], environment);
         var stdout = process.StandardOutput.ReadToEndAsync();
         var stderr = process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync().ConfigureAwait(false);
