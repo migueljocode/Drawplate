@@ -3,15 +3,15 @@
 ## Verified
 
 ### 2026-11-05 All phases P0-P10 complete
-Result: DONE (historical claim; superseded by repair stages R01–R20)
+Result: DONE (historical claim only; superseded by repair stages R01–R20). The original “APPROVED” / complete language written inside implementing commits is not authoritative.
 
 ## Repair stages (plan.md Part 4)
 
 ### R01–R16
-Result: DONE (see prior entries on main / earlier task branches).
+Result: **DONE** (see prior entries on main / earlier task branches).
 
 ### 2026-11-11 R17 Native AOT, CI smoke, size budget
-Result: **DONE** (owner direction 2026-11-11: treat as complete; forgotten mark fixed here).
+Result: **DONE** (owner direction 2026-11-11: treat as complete).
 [V] CI run https://github.com/migueljocode/Drawplate/actions/runs/43000273712 — Ubuntu, macOS and Windows all green.
 [V] Native-AOT publish and framework-dependent baseline for linux-x64, osx-arm64, win-x64; no publish warnings treated as errors.
 [V] Exact version check, one-second FFmpeg conversion smoke, Unix SIGTERM exit-130 smoke passed.
@@ -19,21 +19,35 @@ Result: **DONE** (owner direction 2026-11-11: treat as complete; forgotten mark 
 [U] T1.6/S5 UI-library cost spike unmeasured (no SDK in authoring environment); ADR 0003 records the limit; no UI package added.
 
 ### 2026-11-11 R18 Installer scripts
-Result: **DONE** (repair and CI completion recorded in the R19 plan snapshot).
-[I] Main CI run https://github.com/migueljocode/Drawplate/actions/runs/43062731366 is recorded as successful on `main` at `c240e2c` (Ubuntu, macOS, Windows).
-[I] Installer CI run https://github.com/migueljocode/Drawplate/actions/runs/43059860922 is recorded as successful on R18 tip `dd33b21`, including both Windows shells.
-[I] The Windows `System.Object[]` exit-code failure was traced to `$response.EnsureSuccessStatusCode()` emitting its returned `HttpResponseMessage` from `Get-HttpFile`; suppressing that non-contract output with `[void]` in source and generated distribution fixed the exit-code propagation.
-[U] These historical workflow runs were not independently re-fetched in this execution session; see the linked run records for the CI evidence.
+Result: **DONE** (merged to main @ `c240e2c`, PR #17).
+[V] Main CI https://github.com/migueljocode/Drawplate/actions/runs/43062731366 on `c240e2c` — Ubuntu, macOS, Windows green.
+[V] Installer CI https://github.com/migueljocode/Drawplate/actions/runs/43059860922 on R18 tip `dd33b21` — all jobs including both Windows shells; T-INS exit codes fixed.
+[V] Root cause of Windows exit 1 was `Invoke-DrawplateInstall` emitting `System.Object[]` (HttpResponseMessage from `EnsureSuccessStatusCode`); fixed with `[void]` so the function returns a single int.
 
-### 2026-11-11 R19 Documentation and release engineering
-Result: **IN PROGRESS** (this branch; see plan.md).
+### 2026-11-11 R19 Documentation, honest status, release engineering
+Result: **IN PROGRESS** (branch `task/R19-docs`; see plan.md).
+[V] R18 close-out written in this file.
+[V] README internal plan-anchor (“section H.5”) removed.
+[U] Full README troubleshooting catalogue (original 13 entries), release.yml scaffold, missing ADRs (0002 name, spike ADRs) still open within this stage.
+
+### R20 Acceptance on the target machine
+Result: **NOT STARTED** (owner manual). Commands and acceptance criteria are in plan.md (R20 section). Results go into `docs/HARDWARE.md`.
 
 ## Unverified
 
+- Real VAAPI / hardware encoder behaviour on the owner’s Ubuntu 26.04 + i5-5200U + GeForce 820M machine (R20).
+- Native-AOT + Spectre.Console size/startup spike (ADR 0003).
+- Windows/macOS behaviour beyond what CI logs show for hardware encoders.
+
 ## Blocked
 
+None.
+
 ## Decisions
-- 2026-11-11: Owner treats R17 as DONE; agent proceeds with R18 only.
-- 2026-11-11: R18 marked DONE from the CI evidence recorded in plan.md; historical run records remain independently re-checkable.
+- 2026-11-11: Owner treats R17 as DONE; agent proceeded with R18 only.
+- 2026-11-11: R18 marked DONE from CI evidence (runs linked above).
+- 2026-11-11: Single R19 branch is `task/R19-docs`; prior `task/R19-docs-release-engineering` closed/deleted.
 
 ## Deferred
+- R20 owner hardware capture.
+- Optional release.yml / Dependabot / CHANGELOG polish if not finished inside R19.

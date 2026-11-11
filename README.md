@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/migueljocode/Drawplate/main/scripts
 irm https://raw.githubusercontent.com/migueljocode/Drawplate/main/scripts/dist/install.ps1 | iex
 ```
 
-See the README in the repository for the pinned-tag one-liners and details.
+After a release is tagged, prefer the tag-pinned one-liners from the release notes so the scripts match the binary.
 
 ## Quick start
 
@@ -38,7 +38,7 @@ drawplate -c -q 80
 
 ## Options
 
-Run `drawplate --help` for the full list. The option table is generated from the source; see section H.5 of plan.md.
+Run `drawplate --help` for the full list. The option table is generated from the source.
 
 ## FFmpeg
 
