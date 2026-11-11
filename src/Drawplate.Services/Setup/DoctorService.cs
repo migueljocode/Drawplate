@@ -109,7 +109,7 @@ public sealed class DoctorService
             {
                 Lines = lines.ToImmutable(),
                 ExitCode = 3,
-                Error = Messages.E_FF_03()
+                Error = Messages.E_FF_03(_platform.Os)
             };
         }
 
