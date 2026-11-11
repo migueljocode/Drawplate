@@ -34,6 +34,7 @@ public sealed class AcquisitionFlow
     private readonly PlatformInfo _platform;
     private readonly TextWriter _stdout;
     private readonly TextWriter _stderr;
+    private readonly Func<string?, FfmpegCandidate?> _locator;
 
     public AcquisitionFlow(
         FfmpegInfoService infoService,
@@ -41,7 +42,8 @@ public sealed class AcquisitionFlow
         InstallRunner installRunner,
         PlatformInfo platform,
         TextWriter stdout,
-        TextWriter stderr)
+        TextWriter stderr,
+        Func<string?, FfmpegCandidate?>? locator = null)
     {
         ArgumentNullException.ThrowIfNull(infoService);
         ArgumentNullException.ThrowIfNull(prompt);
@@ -55,6 +57,7 @@ public sealed class AcquisitionFlow
         _platform = platform;
         _stdout = stdout;
         _stderr = stderr;
+        _locator = locator ?? LocateSystem;
     }
 
     public async Task<AcquisitionOutcome> RunAsync(
@@ -168,7 +171,9 @@ public sealed class AcquisitionFlow
         return Found(candidate);
     }
 
-    private FfmpegCandidate? Locate(string? ffmpegPath)
+    private FfmpegCandidate? Locate(string? ffmpegPath) => _locator(ffmpegPath);
+
+    private FfmpegCandidate? LocateSystem(string? ffmpegPath)
     {
         var os = _platform.Os;
         return FfmpegLocator.Locate(
