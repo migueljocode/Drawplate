@@ -237,4 +237,7 @@ Result: DONE (CI run [43000273712](https://github.com/migueljocode/Drawplate/act
 ### 2026-11-11 R18 Installer scripts
 Result: IN PROGRESS.
 [I] Reworking the installer generator to copy the maintained single-file sources without module-list headers; adding release-server, shell, PowerShell, progress and CI coverage.
-[U] Installer behavior and cross-shell compatibility await the R18 CI run.
+[V] Installer CI run [43005858724](https://github.com/migueljocode/Drawplate/actions/runs/43005858724): generated output, Ubuntu and macOS jobs passed; both Windows shells passed 10 tests and failed T-INS-04, T-INS-05 and T-INS-06. The logs show the expected checksum/download/rollback messages, but each child process returned exit code 0 instead of 13, 12/13 and 14.
+[I] Shared cause: the script searched `[Environment]::GetCommandLineArgs()` for `-File`; PowerShell does not expose that host switch there. G.5 specifies `$PSCommandPath` to distinguish file execution from piped/`iex` execution. Fixed the dispatch and strengthened cleanup assertions for failed checksum, truncated download and invalid-binary rollback.
+[I] Additional T8.5 test files `scripts/tests/ps1/progress.Tests.ps1` and `scripts/tests/sh/progress.sh` are deviations from the original T8.5 file list; both are included in Installer CI.
+[U] The repair commit's CI run must confirm all five Installer CI jobs and the general CI workflow before R18 is marked DONE.

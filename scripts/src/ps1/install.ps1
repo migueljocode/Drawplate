@@ -388,8 +388,7 @@ function Invoke-DrawplateInstall {
 }
 
 $exitCode = Invoke-DrawplateInstall
-$commandLineArgs = [Environment]::GetCommandLineArgs()
-if ($commandLineArgs -contains '-File') {
+if ($PSCommandPath) {
     exit $exitCode
 }
 $global:LASTEXITCODE = $exitCode

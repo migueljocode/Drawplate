@@ -400,7 +400,7 @@ Observed: `./drawplate --help` and `./drawplate` die with `Unhandled exception. 
 
 #### R18 status and repair steps (2026-11-11)
 
-- **State [V]:** PR #17 (`task/R18-installer-scripts`, head `a5f282e`). `CI` green; `Installer CI` jobs `shell-ubuntu`, `shell-macos`, `generated-up-to-date` green; `windows-powershell-51` and `windows-pwsh-7` red at "Run Pester tests": T-INS-04, T-INS-05, T-INS-06 fail on both. Cause [U]: job logs not yet read.
+- **State [V]:** PR #17 is open on `task/R18-installer-scripts`. Installer CI run [43005858724](https://github.com/migueljocode/Drawplate/actions/runs/43005858724): generator, Ubuntu and macOS jobs passed; both Windows shells failed only T-INS-04/05/06 because the process exit code was 0 instead of 13, 12/13 and 14. Logs confirm checksum rejection, truncated-download rejection and previous-binary restoration all executed. **Cause [I]:** the entry point tests `GetCommandLineArgs()` for `-File`, contrary to G.5's `$PSCommandPath` contract. The repair changes this dispatch and adds explicit staging/backup cleanup assertions.
 - **Steps (do in order, R18 only; do not start R19):**
   1. Read the failing Pester output (job logs or `Invoke-Pester scripts/tests/ps1/install.Tests.ps1`) and record the exact error of each failing test before changing code.
   2. Find the shared cause in `scripts/src/ps1/install.ps1` and the Pester helpers. Check: exit code propagation (G.5: `Invoke-DrawplateInstall` returns the code; `$global:LASTEXITCODE` when piped); expected codes (13 checksum mismatch, 12 or 13 cut download, 14 bad binary with I-006); cleanup (no staging folder left, `.old` restored); `serve_release.py` fault modes (`badsums`, `truncate`) and how the server is started and stopped on Windows.
