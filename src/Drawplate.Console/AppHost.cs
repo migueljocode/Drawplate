@@ -262,8 +262,7 @@ internal static class AppHost
 
         if (chain.IsEmpty)
         {
-            stderr.WriteLine(Messages.E_FF_03(os).Text);
-            return 3;
+            return Fail(Messages.E_FF_03(os), stderr);
         }
 
         var note = HardwareNoteFor(results, chain);
