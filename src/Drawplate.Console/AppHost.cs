@@ -206,7 +206,8 @@ internal static class AppHost
         var info = infoResult.Info!;
         var log = options.Verbose ? (Action<string>)stderr.WriteLine : null;
         var probe = new EncoderProbe(new ProcessLauncher(), infoService, os, log: log);
-        var results = probe.ProbeAsync(info, ProbeKinds(convert, os), ct).GetAwaiter().GetResult();
+        var probeKinds = options.Interactive ? EncoderSets.For(os) : ProbeKinds(convert, os);
+        var results = probe.ProbeAsync(info, probeKinds, ct).GetAwaiter().GetResult();
 
         var working = results.Where(r => r.Passed).Select(r => r.Kind).ToImmutableArray();
         var built = EncoderChain.Build(
