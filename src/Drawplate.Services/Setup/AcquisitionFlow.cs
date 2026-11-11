@@ -97,7 +97,7 @@ public sealed class AcquisitionFlow
             }
             else
             {
-                WriteInfoFailure(candidate.Path, info!);
+                await WriteInfoFailureAsync(candidate.Path, info!).ConfigureAwait(false);
             }
             return Exit(3);
         }
@@ -109,7 +109,7 @@ public sealed class AcquisitionFlow
         {
             if (runnable is null)
             {
-                WriteNotFound();
+                await WriteNotFoundAsync().ConfigureAwait(false);
                 return Exit(3);
             }
 
@@ -118,7 +118,7 @@ public sealed class AcquisitionFlow
 
         if (_prompt.IsInteractive)
         {
-            WriteNotFound();
+            await WriteNotFoundAsync().ConfigureAwait(false);
             if (runnable is null || !_prompt.Confirm("Run it now?", true))
             {
                 return Exit(3);
@@ -127,7 +127,7 @@ public sealed class AcquisitionFlow
             return await InstallAndRelocateAsync(runnable, mode, ffmpegPath, ct).ConfigureAwait(false);
         }
 
-        WriteNotFound();
+        await WriteNotFoundAsync().ConfigureAwait(false);
         return Exit(3);
     }
 
@@ -155,7 +155,7 @@ public sealed class AcquisitionFlow
         var info = await _infoService.GetInfoAsync(candidate.Path, ct).ConfigureAwait(false);
         if (info.Info is null)
         {
-            WriteNotFoundAfterInstall();
+            await WriteNotFoundAfterInstallAsync().ConfigureAwait(false);
             return Exit(3);
         }
 
