@@ -7,6 +7,7 @@ using Drawplate.Models.Formatting;
 
 namespace Drawplate.Console.Ui;
 
+/// <summary>Two-line synchronized progress display with 60fps-capable time-based Aurora shimmer.</summary>
 internal sealed class LiveProgress
 {
     private const int DefaultBarWidth = 28;
@@ -17,6 +18,7 @@ internal sealed class LiveProgress
     private readonly Theme _theme;
     private readonly TimeProvider _timeProvider;
     private readonly GlyphSet _glyphs;
+    private long _startTimestamp;
     private long _lastDraw;
     private bool _hasDrawn;
     private int _drawCount;
@@ -48,7 +50,13 @@ internal sealed class LiveProgress
             return;
         }
 
+        if (!_hasDrawn)
+        {
+            _startTimestamp = now;
+        }
+
         var dt = _hasDrawn ? _timeProvider.GetElapsedTime(_lastDraw, now).TotalSeconds : 0.1;
+        var animSeconds = _timeProvider.GetElapsedTime(_startTimestamp, now).TotalSeconds + (_drawCount * 0.04);
         _lastDraw = now;
         _hasDrawn = true;
 
@@ -67,7 +75,7 @@ internal sealed class LiveProgress
         }
 
         var frame = _drawCount;
-        var spinnerColor = Gradient.Wave(Palette.AuroraBright, (frame % 10) / 10.0, 0.0);
+        var spinnerColor = Gradient.Wave(Palette.AuroraBright, animSeconds * 0.25, 0.0);
         var spinner = _glyphs.Spinner[Math.Abs(frame) % _glyphs.Spinner.Length];
         var safeName = Sanitizer.ForDisplay(name);
         var maxWidth = Math.Max(40, _theme.Width - 2);
@@ -85,13 +93,13 @@ internal sealed class LiveProgress
         if (_theme.Colors && _theme.Utf8Glyphs)
         {
             bar = normalized.HasValue
-                ? Gradient.Bar(barWidth, _shownFraction, Palette.Aurora, frame, utf8: true)
-                : Gradient.IndeterminateBar(barWidth, frame, utf8: true);
+                ? Gradient.BarAt(barWidth, _shownFraction, Palette.Aurora, animSeconds, utf8: true)
+                : Gradient.IndeterminateBarAt(barWidth, animSeconds, utf8: true);
         }
         else if (_theme.Colors)
         {
             bar = normalized.HasValue
-                ? Gradient.Bar(barWidth, normalized.Value, Palette.Aurora, frame, utf8: false)
+                ? Gradient.BarAt(barWidth, normalized.Value, Palette.Aurora, animSeconds, utf8: false)
                 : new string('-', barWidth);
         }
         else

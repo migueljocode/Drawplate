@@ -93,11 +93,16 @@ public sealed class DoctorService
         lines.Add(new DoctorLine("ok", "FFmpeg", $"{info.Path} ({info.Version.Version}, found on {SourceName(candidate.Source)})"));
         lines.Add(new DoctorLine(info.HasLibx264 ? "ok" : "broken", "libx264", info.HasLibx264 ? "present" : "absent"));
 
-        var ffprobe = _ffprobeLocator(candidate.Path);
+        var ffprobeTask = Task.Run(() => _ffprobeLocator(candidate.Path), ct);
+        var gpuTask = Task.Run(GpuDetector.HasGpu, ct);
+        var probe = new EncoderProbe(_launcher, _infoService, os);
+        var probeTask = probe.ProbeAsync(info, EncoderSets.For(os), ct);
+        await Task.WhenAll(ffprobeTask, gpuTask, probeTask).ConfigureAwait(false);
+
+        var ffprobe = await ffprobeTask.ConfigureAwait(false);
         lines.Add(new DoctorLine("ok", "ffprobe", ffprobe is null ? "not found (optional; durations come from ffmpeg)" : $"{ffprobe} (optional)"));
 
-        var probe = new EncoderProbe(_launcher, _infoService, os);
-        var results = await probe.ProbeAsync(info, EncoderSets.For(os), ct).ConfigureAwait(false);
+        var results = await probeTask.ConfigureAwait(false);
         var working = results.Where(r => r.Passed).Select(r => EncoderSets.Id(r.Kind)).ToImmutableArray();
         lines.Add(new DoctorLine(working.IsEmpty ? "broken" : "ok", "Encoders", working.IsEmpty ? "none" : string.Join(", ", working)));
 
@@ -115,7 +120,7 @@ public sealed class DoctorService
         var nvenc = results.FirstOrDefault(r => r.Kind == EncoderKind.Nvenc && r.FailureKind == ProbeFailureKind.NvencDriverTooOld);
         var minimumDriver = nvenc is null ? null : FailureClassifier.ParseNvenc(nvenc.StderrTail).MinimumDriver;
         var note = HardwareNote.For(
-            GpuDetector.HasGpu(),
+            await gpuTask.ConfigureAwait(false),
             hardwarePassed,
             nvenc is not null,
             minimumDriver);

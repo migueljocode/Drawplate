@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text;
@@ -9,7 +10,7 @@ using Drawplate.Models.Formatting;
 
 namespace Drawplate.Console.Ui;
 
-/// <summary>Interactive Aurora-themed renderer with animated gradient banner, rounded panels, and colored summaries.</summary>
+/// <summary>Interactive Aurora-themed renderer with top-margined gradient banner, rounded panels, and colored summaries.</summary>
 internal sealed class RichRenderer : IRenderer
 {
     private const int SummaryBarWidth = 28;
@@ -88,100 +89,115 @@ internal sealed class RichRenderer : IRenderer
     public void FileFinished(int index, int total, string name, bool success, string? encoder, TimeSpan elapsed, long inputSize, long outputSize, string? reason)
     {
         var shown = Sanitizer.ForDisplay(name);
-        var counter = $"{Palette.TextMuted.Fg()}[{Number(index)}/{Number(total)}]{Rgb.Reset}";
-        if (!success)
+        var counter = $"[{Number(index)}/{Number(total)}]";
+        string line;
+
+        if (success)
         {
-            var err = $"{Palette.Error.Fg()}{_glyphs.Fail}{Rgb.Reset} {counter} {Palette.TextPrimary.Fg()}{shown}{Rgb.Reset}  {Palette.Error.Fg()}{Sanitizer.ForDisplay(reason)}{Rgb.Reset}";
-            _out.WriteLine(AnsiText.ClipVisible(err, Math.Max(30, _theme.Width - 2)));
-            return;
+            var delta = FormatSizeDelta(inputSize, outputSize);
+            var badge = FormatEncoderBadge(encoder ?? "[CPU]");
+            line =
+                $"{Palette.Emerald.Fg()}{_glyphs.Ok}{Rgb.Reset} " +
+                $"{Palette.Sky.Fg()}{counter}{Rgb.Reset} " +
+                $"{Palette.TextPrimary.Fg()}{shown}{Rgb.Reset}  " +
+                $"{Palette.TextSecondary.Fg()}{HumanFormat.Bytes(inputSize)} {_glyphs.Arrow} {Palette.TextPrimary.Fg()}{HumanFormat.Bytes(outputSize)}{Rgb.Reset}  " +
+                $"{delta}  {badge}  {Palette.TextMuted.Fg()}{HumanFormat.Time(elapsed)}{Rgb.Reset}";
+        }
+        else
+        {
+            var why = Sanitizer.ForDisplay(reason ?? "failed");
+            line =
+                $"{Palette.Error.Fg()}{_glyphs.Fail}{Rgb.Reset} " +
+                $"{Palette.Sky.Fg()}{counter}{Rgb.Reset} " +
+                $"{Palette.TextPrimary.Fg()}{shown}{Rgb.Reset}  " +
+                $"{Palette.Error.Fg()}failed: {why}{Rgb.Reset}";
         }
 
-        var change = string.Empty;
-        if (inputSize > 0)
-        {
-            var larger = outputSize > inputSize;
-            var pct = larger ? Percent(outputSize - inputSize, inputSize) : Percent(inputSize - outputSize, inputSize);
-            var deltaColor = larger ? Palette.Warn.Fg() : Palette.Emerald.Fg();
-            var arrow = larger ? _glyphs.Up : _glyphs.Down;
-            change = $"  {deltaColor}{arrow}{Number(pct)}%{Rgb.Reset}";
-        }
-
-        var encBadge = FormatEncoderBadge(encoder ?? "[CPU]");
-        var line =
-            $"{Palette.Emerald.Fg()}{_glyphs.Ok}{Rgb.Reset} {counter} " +
-            $"{Palette.TextPrimary.Fg()}{shown}{Rgb.Reset}  " +
-            $"{Palette.TextSecondary.Fg()}{HumanFormat.Bytes(inputSize)} {_glyphs.Arrow} {Palette.TextPrimary.Fg()}{HumanFormat.Bytes(outputSize)}{Rgb.Reset}" +
-            $"{change}  {encBadge}  {Palette.TextMuted.Fg()}{HumanFormat.Time(elapsed)}{Rgb.Reset}";
-        _out.WriteLine(AnsiText.ClipVisible(line, Math.Max(30, _theme.Width - 2)));
+        _out.WriteLine(AnsiText.ClipVisible(line, Math.Max(40, _theme.Width - 2)));
+        _out.Flush();
     }
 
     public void FileSkipped(int index, int total, string name, string reason)
     {
-        var counter = $"{Palette.TextMuted.Fg()}[{Number(index)}/{Number(total)}]{Rgb.Reset}";
-        var line = $"{Palette.TextMuted.Fg()}{_glyphs.Skip}{Rgb.Reset} {counter} {Palette.TextSecondary.Fg()}{Sanitizer.ForDisplay(name)}{Rgb.Reset}  {Palette.TextMuted.Fg()}skipped: {Sanitizer.ForDisplay(reason)}{Rgb.Reset}";
-        _out.WriteLine(AnsiText.ClipVisible(line, Math.Max(30, _theme.Width - 2)));
+        var shown = Sanitizer.ForDisplay(name);
+        var why = Sanitizer.ForDisplay(reason);
+        var counter = $"[{Number(index)}/{Number(total)}]";
+        var line =
+            $"{Palette.TextMuted.Fg()}{_glyphs.Skip}{Rgb.Reset} " +
+            $"{Palette.TextSecondary.Fg()}{counter}{Rgb.Reset} " +
+            $"{Palette.TextSecondary.Fg()}{shown}{Rgb.Reset}  " +
+            $"{Palette.TextMuted.Fg()}skipped: {why}{Rgb.Reset}";
+        _out.WriteLine(AnsiText.ClipVisible(line, Math.Max(40, _theme.Width - 2)));
+        _out.Flush();
     }
 
-    public void Summary(int converted, int failed, int skipped, long inputSize, long outputSize, string encoderCounts, TimeSpan elapsed, string outputFolder)
+    public void Note(string text)
     {
-        _out.WriteLine();
-        var statusLine = failed > 0
-            ? $"{Palette.Warn.Fg()}Finished with {Number(failed)} failure(s).{Rgb.Reset}"
-            : $"{Palette.Emerald.Fg()}All done.{Rgb.Reset}";
+        var shown = Sanitizer.ForDisplay(text);
+        _out.WriteLine(AnsiText.ClipVisible(
+            $"{Palette.Warn.Fg()}!{Rgb.Reset} {Palette.TextSecondary.Fg()}{shown}{Rgb.Reset}",
+            Math.Max(40, _theme.Width - 2)));
+        _out.Flush();
+    }
 
-        var counts = new List<string>
+    public void Summary(int converted, int failed, int skipped, long inputBytes, long outputBytes, string encoderCounts, TimeSpan elapsed, string outputFolder)
+    {
+        var resultParts = new List<string>
         {
             $"{Palette.Emerald.Fg()}{Number(converted)} converted{Rgb.Reset}",
         };
         if (failed > 0)
         {
-            counts.Add($"{Palette.Error.Fg()}{Number(failed)} failed{Rgb.Reset}");
+            resultParts.Add($"{Palette.Error.Fg()}{Number(failed)} failed{Rgb.Reset}");
         }
 
         if (skipped > 0)
         {
-            counts.Add($"{Palette.TextSecondary.Fg()}{Number(skipped)} skipped{Rgb.Reset}");
+            resultParts.Add($"{Palette.TextSecondary.Fg()}{Number(skipped)} skipped{Rgb.Reset}");
         }
 
         var rows = new List<string>
         {
-            PanelBuilder.KeyValue("Result", string.Join("   ", counts)),
+            PanelBuilder.KeyValue("Result", string.Join("   ", resultParts)),
         };
 
-        if (converted > 0 && inputSize > 0)
+        if (converted > 0 && inputBytes > 0)
         {
-            var larger = outputSize > inputSize;
-            var percent = larger ? Percent(outputSize - inputSize, inputSize) : Percent(inputSize - outputSize, inputSize);
-            var deltaColor = larger ? Palette.Warn.Fg() : Palette.Emerald.Fg();
-            var wording = larger
-                ? $"{deltaColor}{_glyphs.Up} {Number(percent)}% larger{Rgb.Reset}"
-                : $"{deltaColor}{_glyphs.Down} {Number(percent)}% smaller{Rgb.Reset}";
-            rows.Add(PanelBuilder.KeyValue("Size",
-                $"{Palette.TextSecondary.Fg()}{HumanFormat.Bytes(inputSize)} {_glyphs.Arrow} {Palette.TextPrimary.Fg()}{HumanFormat.Bytes(outputSize)}{Rgb.Reset}  {wording}"));
+            var diff = inputBytes - outputBytes;
+            var pct = Math.Clamp((double)outputBytes / inputBytes, 0.0, 1.0);
+            var deltaPct = (int)Math.Round(Math.Abs(diff) * 100.0 / inputBytes, MidpointRounding.AwayFromZero);
+            var arrowLabel = diff >= 0
+                ? $"{Palette.Emerald.Fg()}{_glyphs.Down} {Number(deltaPct)}% smaller{Rgb.Reset}"
+                : $"{Palette.Warn.Fg()}{_glyphs.Up} {Number(deltaPct)}% larger{Rgb.Reset}";
+            rows.Add(PanelBuilder.KeyValue(
+                "Size",
+                $"{Palette.TextSecondary.Fg()}{HumanFormat.Bytes(inputBytes)} {_glyphs.Arrow} {Palette.TextPrimary.Fg()}{HumanFormat.Bytes(outputBytes)}{Rgb.Reset}  {arrowLabel}"));
 
-            var share = Percent(outputSize, inputSize);
-            var ratio = Math.Clamp((double)outputSize / inputSize, 0.0, 1.0);
-            var bar = Gradient.Bar(SummaryBarWidth, ratio, larger ? Palette.WarnRamp : Palette.SuccessRamp, frame: -1, utf8: _theme.Utf8Glyphs);
-            rows.Add($"            {bar} {Palette.Cyan.Fg()}{Number(share)}% of original{Rgb.Reset}");
+            var ramp = diff >= 0 ? Palette.SuccessRamp : Palette.WarnRamp;
+            var bar = Gradient.BarAt(Math.Min(SummaryBarWidth, Math.Max(12, _theme.Width - 36)), pct, ramp, timeSeconds: -1.0, utf8: _theme.Utf8Glyphs);
+            var ratioPct = (int)Math.Round(pct * 100.0, MidpointRounding.AwayFromZero);
+            rows.Add(PanelBuilder.KeyValue(string.Empty, $"{bar} {Palette.TextSecondary.Fg()}{Number(ratioPct)}% of original{Rgb.Reset}"));
 
-            if (!larger && inputSize - outputSize > 0)
-            {
-                rows.Add(PanelBuilder.KeyValue("Saved", $"{Palette.Emerald.Fg()}{HumanFormat.Bytes(inputSize - outputSize)}{Rgb.Reset}"));
-            }
+            var savedLabel = diff >= 0 ? "Saved" : "Added";
+            var savedColor = diff >= 0 ? Palette.Emerald : Palette.Warn;
+            rows.Add(PanelBuilder.KeyValue(savedLabel, $"{savedColor.Fg()}{HumanFormat.Bytes(Math.Abs(diff))}{Rgb.Reset}"));
         }
 
         if (!string.IsNullOrEmpty(encoderCounts))
         {
-            rows.Add(PanelBuilder.KeyValue("Encoders", $"{Palette.Sky.Fg()}{Sanitizer.ForDisplay(encoderCounts)}{Rgb.Reset}"));
+            rows.Add(PanelBuilder.KeyValue("Encoders", FormatEncoderChain(encoderCounts)));
         }
 
-        rows.Add(PanelBuilder.KeyValue("Time", $"{Palette.TextPrimary.Fg()}{HumanFormat.Time(elapsed)}{Rgb.Reset}"));
+        rows.Add(PanelBuilder.KeyValue("Time", $"{Palette.Cyan.Fg()}{HumanFormat.Time(elapsed)}{Rgb.Reset}"));
         rows.Add(PanelBuilder.KeyValue("Output", $"{Palette.Sky.Fg()}{Sanitizer.ForDisplay(outputFolder)}{Rgb.Reset}"));
-        rows.Add(PanelBuilder.KeyValue("Status", statusLine));
 
-        var border = failed > 0 ? Palette.Warn : Palette.Emerald;
-        var panel = PanelBuilder.Build("SUMMARY", rows, _theme.Width, _theme.Utf8Glyphs, border);
-        foreach (var line in panel)
+        var statusColor = failed == 0 ? Palette.Emerald : Palette.Error;
+        var statusText = failed == 0 ? "All done." : $"{Number(failed)} file(s) failed.";
+        rows.Add(PanelBuilder.KeyValue("Status", $"{statusColor.Fg()}{statusText}{Rgb.Reset}"));
+
+        _out.WriteLine();
+        var border = failed == 0 ? Palette.Emerald : Palette.Error;
+        foreach (var line in PanelBuilder.Build("SUMMARY", rows, _theme.Width, _theme.Utf8Glyphs, border))
         {
             _out.WriteLine(line);
         }
@@ -189,17 +205,11 @@ internal sealed class RichRenderer : IRenderer
         _out.Flush();
     }
 
-    public void Note(string text)
-    {
-        var line = $"{Palette.Warn.Fg()}{Sanitizer.ForDisplay(text)}{Rgb.Reset}";
-        _out.WriteLine(AnsiText.ClipVisible(line, Math.Max(30, _theme.Width - 2)));
-    }
-
     private void RenderAnimatedBanner()
     {
         if (!_theme.CanRedraw || !_theme.IsInteractive)
         {
-            foreach (var line in BrandLogo.RenderLines(_theme.Width, _theme.Utf8Glyphs))
+            foreach (var line in BrandLogo.RenderLinesAt(_theme.Width, _theme.Utf8Glyphs, timeSeconds: 0.2, reveal: 1.0, topMargin: BrandLogo.TopMargin))
             {
                 _out.WriteLine(line);
             }
@@ -208,15 +218,17 @@ internal sealed class RichRenderer : IRenderer
             return;
         }
 
-        var finalLines = BrandLogo.RenderLines(_theme.Width, _theme.Utf8Glyphs, frame: 8, reveal: 1.0);
-        var height = finalLines.Count;
+        var final = BrandLogo.RenderLinesAt(_theme.Width, _theme.Utf8Glyphs, timeSeconds: 0.3, reveal: 1.0, topMargin: BrandLogo.TopMargin);
+        var height = final.Count;
+        var maxCols = Math.Max(20, _theme.Width - 1);
+        var clock = Stopwatch.StartNew();
+
+        _out.Write("\u001b[?25l");
         try
         {
-            _out.Write("\u001b[?25l");
             for (var step = 1; step <= 8; step++)
             {
-                var reveal = step / 8.0;
-                var frameLines = BrandLogo.RenderLines(_theme.Width, _theme.Utf8Glyphs, frame: step, reveal: reveal);
+                var frameLines = BrandLogo.RenderLinesAt(_theme.Width, _theme.Utf8Glyphs, clock.Elapsed.TotalSeconds, reveal: step / 8.0, topMargin: BrandLogo.TopMargin);
                 var sb = new StringBuilder(512);
                 sb.Append("\u001b[?2026h");
                 if (step > 1)
@@ -224,42 +236,67 @@ internal sealed class RichRenderer : IRenderer
                     sb.Append(CultureInfo.InvariantCulture, $"\u001b[{height}A");
                 }
 
-                for (var r = 0; r < frameLines.Count; r++)
+                foreach (var line in frameLines)
                 {
-                    sb.Append('\r').Append(frameLines[r]).Append("\u001b[K\n");
+                    sb.Append('\r').Append(AnsiText.ClipVisible(line, maxCols)).Append("\u001b[K\n");
                 }
 
                 sb.Append("\u001b[?2026l");
                 _out.Write(sb.ToString());
                 _out.Flush();
-                Thread.Sleep(28);
+                Thread.Sleep(16);
             }
         }
         finally
         {
             _out.Write("\u001b[?25h");
-            _out.WriteLine();
-            _out.Flush();
         }
+
+        _out.WriteLine();
+        _out.Flush();
     }
 
-    private static string FormatEncoderChain(string chain)
+    internal static string FormatEncoderChain(string chain)
     {
-        var parts = chain.Split(" > ", StringSplitOptions.RemoveEmptyEntries);
+        var parts = chain.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         for (var i = 0; i < parts.Length; i++)
         {
-            parts[i] = FormatEncoderBadge(parts[i]);
+            parts[i] = parts[i] == ">"
+                ? $"{Palette.TextMuted.Fg()}>{Rgb.Reset}"
+                : FormatEncoderBadge(parts[i]);
         }
 
-        return string.Join($" {Palette.TextMuted.Fg()}>{Rgb.Reset} ", parts);
+        return string.Join(' ', parts);
     }
 
-    private static string FormatEncoderBadge(string badge) => badge.Equals("[CPU]", StringComparison.OrdinalIgnoreCase)
-        ? $"{Palette.Sky.Fg()}{badge}{Rgb.Reset}"
-        : $"{Palette.Emerald.Fg()}{badge}{Rgb.Reset}";
+    internal static string FormatEncoderBadge(string badge)
+    {
+        if (badge.StartsWith("[CPU", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{Palette.Sky.Fg()}{badge}{Rgb.Reset}";
+        }
 
-    private static long Percent(long part, long whole) =>
-        (long)Math.Round(100.0 * part / whole, MidpointRounding.AwayFromZero);
+        if (badge.StartsWith('['))
+        {
+            return $"{Palette.Emerald.Fg()}{badge}{Rgb.Reset}";
+        }
 
-    private static string Number(long value) => value.ToString(CultureInfo.InvariantCulture);
+        return $"{Palette.TextSecondary.Fg()}{badge}{Rgb.Reset}";
+    }
+
+    internal string FormatSizeDelta(long inputBytes, long outputBytes)
+    {
+        if (inputBytes <= 0)
+        {
+            return string.Empty;
+        }
+
+        var diff = inputBytes - outputBytes;
+        var pct = (int)Math.Round(Math.Abs(diff) * 100.0 / inputBytes, MidpointRounding.AwayFromZero);
+        return diff >= 0
+            ? $"{Palette.Emerald.Fg()}{_glyphs.Down}{Number(pct)}%{Rgb.Reset}"
+            : $"{Palette.Warn.Fg()}{_glyphs.Up}{Number(pct)}%{Rgb.Reset}";
+    }
+
+    private static string Number(int value) => value.ToString(CultureInfo.InvariantCulture);
 }

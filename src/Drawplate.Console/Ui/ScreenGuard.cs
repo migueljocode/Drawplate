@@ -3,7 +3,7 @@ using System.IO;
 
 namespace Drawplate.Console.Ui;
 
-/// <summary>Manages alternate screen buffer and cursor visibility with guaranteed restoration on exit or signal.</summary>
+/// <summary>Manages alternate screen buffer, mouse wheel reporting, and cursor visibility with guaranteed restoration.</summary>
 internal sealed class ScreenGuard : IDisposable
 {
     private readonly Action _restore;
@@ -16,7 +16,7 @@ internal sealed class ScreenGuard : IDisposable
         _entered = entered;
     }
 
-    public static ScreenGuard? TryEnter(TextWriter output, Theme theme)
+    public static ScreenGuard? TryEnter(TextWriter output, Theme theme, bool enableMouse = true)
     {
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(theme);
@@ -27,7 +27,11 @@ internal sealed class ScreenGuard : IDisposable
 
         try
         {
-            output.Write("\u001b[?1049h\u001b[?25l");
+            // Enter alternate buffer + hide cursor + enable alternate scroll & SGR mouse wheel events.
+            var init = enableMouse
+                ? "\u001b[?1049h\u001b[?25l\u001b[?1007h\u001b[?1000h\u001b[?1006h"
+                : "\u001b[?1049h\u001b[?25l";
+            output.Write(init);
             output.Flush();
             return new ScreenGuard(() => EmergencyRestore(output), entered: true);
         }
@@ -42,7 +46,7 @@ internal sealed class ScreenGuard : IDisposable
         var target = output ?? global::System.Console.Out;
         try
         {
-            target.Write("\u001b[0m\u001b[?25h\u001b[?1049l");
+            target.Write("\u001b[0m\u001b[?1006l\u001b[?1000l\u001b[?1007l\u001b[?25h\u001b[?1049l");
             target.Flush();
         }
         catch (IOException)

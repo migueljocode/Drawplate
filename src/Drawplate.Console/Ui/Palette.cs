@@ -36,10 +36,12 @@ internal static class Palette
         new(0xFB, 0xBF, 0x24),
     ];
 
+    public static readonly Rgb DeepTeal = new(0x06, 0x4E, 0x4B);
     public static readonly Rgb Emerald = new(0x34, 0xD3, 0x99);
     public static readonly Rgb Cyan = new(0x22, 0xD3, 0xEE);
     public static readonly Rgb Sky = new(0x38, 0xBD, 0xF8);
     public static readonly Rgb Blue = new(0x60, 0xA5, 0xFA);
+    public static readonly Rgb MintGlow = new(0xA7, 0xF3, 0xD0);
 
     public static readonly Rgb BorderPrimary = new(0x08, 0x91, 0xB2);
     public static readonly Rgb BorderSecondary = new(0x03, 0x69, 0xA1);

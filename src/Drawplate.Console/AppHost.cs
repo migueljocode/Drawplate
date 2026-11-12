@@ -12,6 +12,7 @@ using Drawplate.Console.Ui;
 using Drawplate.Models.Cli;
 using Drawplate.Models.Encoding;
 using Drawplate.Models.Failures;
+using Drawplate.Models.Ffmpeg;
 using Drawplate.Models.Formatting;
 using Drawplate.Models.Planning;
 using Drawplate.Models.Setup;
@@ -24,6 +25,7 @@ using Drawplate.Services.Setup;
 
 namespace Drawplate.Console;
 
+/// <summary>Top-level CLI composition root. Keeps all side effects behind interfaces and handles top-level errors cleanly.</summary>
 internal static class AppHost
 {
     /// <summary>The only place that turns exceptions into exit codes (C.4).</summary>
@@ -61,6 +63,23 @@ internal static class AppHost
         }
 
         return RunConvert(parsed.Options!, stdout, stderr, ct);
+    }
+
+    private static int Print(TextWriter writer, string text)
+    {
+        writer.Write(text);
+        return (int)ExitCode.Ok;
+    }
+
+    private static int Fail(Message message, TextWriter stderr)
+    {
+        stderr.WriteLine(message.Text);
+        if (message.Hint is { } hint)
+        {
+            stderr.WriteLine($"  {hint}");
+        }
+
+        return message.ExitCode;
     }
 
     private static int? Dispatch(ParsedCommand parsed, TextWriter stdout, TextWriter stderr, CancellationToken ct) => parsed.Kind switch
@@ -111,13 +130,21 @@ internal static class AppHost
             ? ConsoleGuard.EnterInteractive()
             : null;
         var theme = CreateTheme(stdout, consoleGuard);
-        var info = new FfmpegInfoService(new ProcessLauncher());
-        var report = new DoctorService(info, new ProcessLauncher(), platform)
-            .RunAsync(options.FfmpegPath, ct).GetAwaiter().GetResult();
 
         if (theme.Colors)
         {
-            RichStatusView.WriteDoctor(stdout, report, platform, theme);
+            RichStatusView.WriteDoctorBanner(stdout, theme);
+        }
+
+        var info = new FfmpegInfoService(new ProcessLauncher());
+        var doctorService = new DoctorService(info, new ProcessLauncher(), platform);
+        var report = theme.Colors
+            ? RichStatusView.RunWithSpinner(stdout, theme, "Checking FFmpeg, ffprobe & GPU encoders...", token => doctorService.RunAsync(options.FfmpegPath, token), ct)
+            : doctorService.RunAsync(options.FfmpegPath, ct).GetAwaiter().GetResult();
+
+        if (theme.Colors)
+        {
+            RichStatusView.WriteDoctor(stdout, report, platform, theme, includeBanner: false);
             return report.ExitCode;
         }
 
@@ -128,9 +155,10 @@ internal static class AppHost
 
         if (report.Error is { } error)
         {
-            WriteMessage(stderr, error);
+            return Fail(error, stderr);
         }
-        else if (report.Lines.Any(line => line.Check == "FFmpeg" && line.Status == "missing"))
+
+        if (report.Lines.Any(line => line.Check == "FFmpeg" && line.Status == "missing"))
         {
             stderr.WriteLine(InstallAdvisor.NotFoundText(platform, InstallAdvisor.Suggestions(platform)));
         }
@@ -145,35 +173,9 @@ internal static class AppHost
             !global::System.Console.IsInputRedirected,
             !global::System.Console.IsOutputRedirected);
 
-    private static void WriteMessage(TextWriter stderr, Message message)
-    {
-        stderr.WriteLine(message.Text);
-        if (message.Hint is { } hint)
-        {
-            stderr.WriteLine($"  {hint}");
-        }
-    }
-
-    private static int Print(TextWriter stdout, string text)
-    {
-        stdout.Write(text);
-        return (int)ExitCode.Ok;
-    }
-
-    private static int Fail(Message message, TextWriter stderr)
-    {
-        stderr.WriteLine(message.Text);
-        if (message.Hint is { } hint)
-        {
-            stderr.WriteLine($"  {hint}");
-        }
-        return message.ExitCode;
-    }
-
     private static int RunConvert(RawOptions options, TextWriter stdout, TextWriter stderr, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-
         var os = PlatformDetector.DetectOs();
         var validation = OptionValidator.Validate(options, os);
         if (validation.Options is not { } convert)
@@ -181,31 +183,33 @@ internal static class AppHost
             return Fail(validation.Error!, stderr);
         }
 
-        if (options.Interactive && !CreatePrompt(stdout).IsInteractive)
-        {
-            return Fail(Messages.E_USAGE_10(), stderr);
-        }
-
+        Action<string>? log = options.Verbose ? stderr.WriteLine : null;
         if (options.InstallDeps)
         {
             return RunSetup(options, stdout, stderr, ct);
+        }
+
+        if (options.Interactive && !CreatePrompt(stdout).IsInteractive)
+        {
+            return Fail(Messages.E_USAGE_10(), stderr);
         }
 
         using var consoleGuard = ReferenceEquals(stdout, global::System.Console.Out) && !global::System.Console.IsOutputRedirected
             ? ConsoleGuard.EnterInteractive()
             : null;
         var theme = CreateTheme(stdout, consoleGuard);
-        var renderer = RendererFactory.Create(stdout, theme);
+        var plainRenderer = new PlainRenderer(stdout, theme.Utf8Glyphs);
 
         // Input and output problems are reported before FFmpeg is touched, so they start no process.
         WorkPlan? work = null;
         if (!options.ListEncoders && !options.Interactive)
         {
-            var (plan, exit) = PlanWork(convert, os, renderer, stderr);
+            var (plan, exit) = PlanWork(convert, os, plainRenderer, stderr);
             if (exit is { } planExit)
             {
                 return planExit;
             }
+
             work = plan;
         }
 
@@ -218,33 +222,53 @@ internal static class AppHost
             platformInfo,
             stdout,
             stderr);
-        var acquired = acquisition.RunAsync(
-            AcquisitionMode.Convert,
-            options.InstallDeps,
-            options.NoInstall,
-            options.FfmpegPath,
-            ct).GetAwaiter().GetResult();
+
+        var useFullScreen = !options.ListEncoders && !options.Verbose && theme.Colors && theme.CanRedraw && theme.IsInteractive;
+        var probe = new EncoderProbe(new ProcessLauncher(), infoService, os, log: log);
+        var probeKinds = options.Interactive ? EncoderSets.For(os) : ProbeKinds(convert, os);
+
+        if (useFullScreen)
+        {
+            return RunConvertFullScreen(
+                stdout,
+                stderr,
+                theme,
+                options,
+                convert,
+                work,
+                os,
+                acquisition,
+                infoService,
+                probe,
+                probeKinds,
+                log,
+                ct);
+        }
+
+        var acquired = options.ListEncoders && theme.Colors
+            ? RichStatusView.RunWithSpinner(stdout, theme, "Probing FFmpeg...", token => acquisition.RunAsync(AcquisitionMode.Convert, options.InstallDeps, options.NoInstall, options.FfmpegPath, token), ct)
+            : acquisition.RunAsync(AcquisitionMode.Convert, options.InstallDeps, options.NoInstall, options.FfmpegPath, ct).GetAwaiter().GetResult();
         if (acquired.Status == AcquisitionStatus.Exit)
         {
             return acquired.ExitCode;
         }
 
         var candidate = acquired.Candidate!;
-        var infoResult = infoService.GetInfoAsync(candidate.Path, ct).GetAwaiter().GetResult();
+        var infoResult = acquired.InfoResult ?? infoService.GetInfoAsync(candidate.Path, ct).GetAwaiter().GetResult();
         if (infoResult.NotRunnable is { } notRunnable)
         {
             return Fail(Messages.E_FF_02(candidate.Path, notRunnable.Reason), stderr);
         }
+
         if (infoResult.TooOld is { } tooOld)
         {
             return Fail(Messages.E_FF_07(tooOld.Version.ToString(), os), stderr);
         }
 
         var info = infoResult.Info!;
-        var log = options.Verbose ? (Action<string>)stderr.WriteLine : null;
-        var probe = new EncoderProbe(new ProcessLauncher(), infoService, os, log: log);
-        var probeKinds = options.Interactive ? EncoderSets.For(os) : ProbeKinds(convert, os);
-        var results = probe.ProbeAsync(info, probeKinds, ct).GetAwaiter().GetResult();
+        var results = options.ListEncoders && theme.Colors
+            ? RichStatusView.RunWithSpinner(stdout, theme, "Probing available encoders...", token => probe.ProbeAsync(info, probeKinds, token), ct)
+            : probe.ProbeAsync(info, probeKinds, ct).GetAwaiter().GetResult();
 
         var working = results.Where(r => r.Passed).Select(r => r.Kind).ToImmutableArray();
         var built = EncoderChain.Build(
@@ -259,9 +283,7 @@ internal static class AppHost
         var chain = built.Chain;
         if (options.Interactive)
         {
-            var menu = theme.Colors && theme.IsInteractive
-                ? RichInteractiveMenu.Run(stdout, theme, working, convert.Quality, convert.MaxSize)
-                : new MenuService(CreatePrompt(stdout)).Run(working, convert.Quality, convert.MaxSize);
+            var menu = new MenuService(CreatePrompt(stdout)).Run(working, convert.Quality, convert.MaxSize);
             if (menu.Error is { } menuError)
             {
                 if (menuError.Id == "N-INT")
@@ -281,8 +303,10 @@ internal static class AppHost
                 {
                     return Fail(selectedError, stderr);
                 }
+
                 chain = selectedBuild.Chain;
             }
+
             convert = new ConvertOptions
             {
                 Encoder = selected,
@@ -291,10 +315,11 @@ internal static class AppHost
                 InputFolder = convert.InputFolder,
                 Files = convert.Files,
                 NoTimestamps = convert.NoTimestamps,
-                OutputFolder = convert.OutputFolder
+                OutputFolder = convert.OutputFolder,
             };
         }
 
+        var renderer = RendererFactory.Create(stdout, theme);
         if (!options.ListEncoders && work is null)
         {
             var (plan, exit) = PlanWork(convert, os, renderer, stderr);
@@ -302,6 +327,7 @@ internal static class AppHost
             {
                 return planExit;
             }
+
             work = plan;
         }
 
@@ -313,19 +339,210 @@ internal static class AppHost
         var note = HardwareNoteFor(results, chain);
         if (options.ListEncoders)
         {
+            if (theme.Colors)
+            {
+                RichStatusView.WriteEncoders(stdout, chain, note, theme);
+                return (int)ExitCode.Ok;
+            }
+
             foreach (var kind in chain)
             {
                 stdout.WriteLine(EncoderSets.Id(kind));
             }
+
             if (note is not null)
             {
                 stderr.WriteLine(note);
             }
+
             return (int)ExitCode.Ok;
         }
 
         var vaapi = results.FirstOrDefault(r => r.Kind == EncoderKind.Vaapi && r.Passed)?.Vaapi;
         return Convert(work!, convert, candidate.Path, chain, vaapi, note, os, renderer, log, ct);
+    }
+
+    private static int RunConvertFullScreen(
+        TextWriter stdout,
+        TextWriter stderr,
+        Theme theme,
+        RawOptions options,
+        ConvertOptions convert,
+        WorkPlan? work,
+        OperatingSystemKind os,
+        AcquisitionFlow acquisition,
+        FfmpegInfoService infoService,
+        EncoderProbe probe,
+        ImmutableArray<EncoderKind> probeKinds,
+        Action<string>? log,
+        CancellationToken ct)
+    {
+        // Check FFmpeg availability first; if missing and promptable, let AcquisitionFlow prompt on normal console cleanly.
+        var preLocated = FfmpegLocator.Locate(
+            options.FfmpegPath,
+            Environment.GetEnvironmentVariable("DRAWPLATE_FFMPEG"),
+            PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")),
+            File.Exists,
+            FfmpegLocator.EnumerateDirectories,
+            KnownFolders.For(os, Environment.GetEnvironmentVariable),
+            os);
+
+        AcquisitionOutcome? preAcquired = null;
+        if (preLocated is null)
+        {
+            preAcquired = acquisition.RunAsync(AcquisitionMode.Convert, options.InstallDeps, options.NoInstall, options.FfmpegPath, ct).GetAwaiter().GetResult();
+            if (preAcquired.Status == AcquisitionStatus.Exit)
+            {
+                return preAcquired.ExitCode;
+            }
+        }
+
+        var clock = Stopwatch.StartNew();
+        FfmpegCandidate? candidate = null;
+        FfmpegInfo? info = null;
+        ImmutableArray<ProbeResult> results = default;
+        ImmutableArray<EncoderKind> chain = default;
+        VaapiTarget? vaapi = null;
+        string? note = null;
+        RichDashboard.SummaryInfo? summary = null;
+        int exitCode;
+
+        using (var screen = ScreenGuard.TryEnter(stdout, theme, enableMouse: true))
+        {
+            var probeOutcome = RichDashboard.RunStartupTask(
+                stdout,
+                theme,
+                clock,
+                "Detecting FFmpeg & hardware encoders...",
+                async token =>
+                {
+                    var acq = preAcquired ?? await acquisition.RunAsync(AcquisitionMode.Convert, options.InstallDeps, options.NoInstall, options.FfmpegPath, token).ConfigureAwait(false);
+                    if (acq.Status == AcquisitionStatus.Exit)
+                    {
+                        return (Exit: acq.ExitCode, Error: (Message?)null, Candidate: (FfmpegCandidate?)null, Info: (FfmpegInfo?)null, Results: ImmutableArray<ProbeResult>.Empty);
+                    }
+
+                    var cand = acq.Candidate!;
+                    var infoRes = acq.InfoResult ?? await infoService.GetInfoAsync(cand.Path, token).ConfigureAwait(false);
+                    if (infoRes.NotRunnable is { } nr)
+                    {
+                        return (Exit: 0, Error: Messages.E_FF_02(cand.Path, nr.Reason), Candidate: cand, Info: (FfmpegInfo?)null, Results: ImmutableArray<ProbeResult>.Empty);
+                    }
+
+                    if (infoRes.TooOld is { } old)
+                    {
+                        return (Exit: 0, Error: Messages.E_FF_07(old.Version.ToString(), os), Candidate: cand, Info: (FfmpegInfo?)null, Results: ImmutableArray<ProbeResult>.Empty);
+                    }
+
+                    var probed = await probe.ProbeAsync(infoRes.Info!, probeKinds, token).ConfigureAwait(false);
+                    return (Exit: 0, Error: (Message?)null, Candidate: cand, Info: infoRes.Info, Results: probed);
+                },
+                ct);
+
+            if (probeOutcome.Info is null)
+            {
+                screen?.Dispose();
+                return probeOutcome.Error is { } err ? Fail(err, stderr) : probeOutcome.Exit;
+            }
+
+            candidate = probeOutcome.Candidate!;
+            info = probeOutcome.Info;
+            results = probeOutcome.Results;
+
+            var working = results.Where(r => r.Passed).Select(r => r.Kind).ToImmutableArray();
+            var built = EncoderChain.Build(
+                !options.Interactive && convert.Encoder is { } pinned ? EncoderSets.Id(pinned) : null,
+                os,
+                working);
+            if (built.Error is { } chainError)
+            {
+                screen?.Dispose();
+                return Fail(chainError, stderr);
+            }
+
+            chain = built.Chain;
+            if (options.Interactive)
+            {
+                var menu = RichInteractiveMenu.Run(stdout, theme, working, convert.Quality, convert.MaxSize, clock);
+                if (menu.Error is { } menuError)
+                {
+                    screen?.Dispose();
+                    if (menuError.Id == "N-INT")
+                    {
+                        stderr.WriteLine(menuError.Text);
+                        return menuError.ExitCode;
+                    }
+
+                    return Fail(menuError, stderr);
+                }
+
+                var selected = menu.Encoder;
+                if (selected is { } selectedEncoder)
+                {
+                    var selectedBuild = EncoderChain.Build(EncoderSets.Id(selectedEncoder), os, working);
+                    if (selectedBuild.Error is { } selectedError)
+                    {
+                        screen?.Dispose();
+                        return Fail(selectedError, stderr);
+                    }
+
+                    chain = selectedBuild.Chain;
+                }
+
+                convert = new ConvertOptions
+                {
+                    Encoder = selected,
+                    Quality = menu.Quality ?? convert.Quality,
+                    MaxSize = menu.MaxSize ?? convert.MaxSize,
+                    InputFolder = convert.InputFolder,
+                    Files = convert.Files,
+                    NoTimestamps = convert.NoTimestamps,
+                    OutputFolder = convert.OutputFolder,
+                };
+            }
+
+            if (work is null)
+            {
+                var planRenderer = new RichDashboard.DashboardRenderer(theme.Utf8Glyphs);
+                var (plan, exit) = PlanWork(convert, os, planRenderer, stderr);
+                if (exit is { } planExit)
+                {
+                    screen?.Dispose();
+                    return planExit;
+                }
+
+                work = plan;
+            }
+
+            if (chain.IsEmpty)
+            {
+                screen?.Dispose();
+                return Fail(Messages.E_FF_03(os), stderr);
+            }
+
+            note = HardwareNoteFor(results, chain);
+            vaapi = results.FirstOrDefault(r => r.Kind == EncoderKind.Vaapi && r.Passed)?.Vaapi;
+            (exitCode, summary) = RichDashboard.RunConversionLoop(
+                stdout,
+                theme,
+                clock,
+                (dashRenderer, token) => Convert(work!, convert, candidate!.Path, chain, vaapi, note, os, dashRenderer, log, token),
+                ct);
+        }
+
+        // Print final Aurora summary card onto normal stdout so results & output folder persist in shell history.
+        if (summary is { } s)
+        {
+            var rich = new RichRenderer(stdout, theme);
+            if (note is not null)
+            {
+                rich.Note(note);
+            }
+
+            rich.Summary(s.Converted, s.Failed, s.Skipped, s.InputBytes, s.OutputBytes, s.EncoderCounts, s.Elapsed, s.OutputFolder);
+        }
+
+        return exitCode;
     }
 
     private static Theme CreateTheme(TextWriter stdout, ConsoleGuard? consoleGuard = null)
@@ -368,6 +585,21 @@ internal static class AppHost
         {
             return null;
         }
+    }
+
+    private static OperatingSystemKind CurrentOs()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return OperatingSystemKind.Windows;
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            return OperatingSystemKind.MacOS;
+        }
+
+        return OperatingSystemKind.Linux;
     }
 
     /// <summary>What to probe: all encoders for this OS, only the CPU for -c, or the pinned one plus the CPU.</summary>
@@ -416,6 +648,7 @@ internal static class AppHost
             {
                 return (null, Fail(error, stderr));
             }
+
             sources = files;
         }
         else

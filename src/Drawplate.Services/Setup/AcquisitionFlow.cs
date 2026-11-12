@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Drawplate.Models.Cli;
+using Drawplate.Models.Ffmpeg;
 using Drawplate.Models.Setup;
 using Drawplate.Services.Ffmpeg;
 using Drawplate.Services.Interaction;
@@ -17,6 +18,7 @@ public sealed record AcquisitionOutcome
 {
     public required AcquisitionStatus Status { get; init; }
     public FfmpegCandidate? Candidate { get; init; }
+    public FfmpegInfoResult? InfoResult { get; init; }
     public required int ExitCode { get; init; }
 }
 
@@ -80,7 +82,7 @@ public sealed class AcquisitionFlow
                 return Exit(0);
             }
 
-            return Found(candidate!);
+            return Found(candidate!, info);
         }
 
         // An explicit path or environment override is authoritative: do not silently install
@@ -168,7 +170,7 @@ public sealed class AcquisitionFlow
             return Exit(0);
         }
 
-        return Found(candidate);
+        return Found(candidate, info);
     }
 
     private FfmpegCandidate? Locate(string? ffmpegPath) => _locator(ffmpegPath);
@@ -222,8 +224,8 @@ public sealed class AcquisitionFlow
         await _stderr.WriteLineAsync("  See \"Troubleshooting FFmpeg\" in the README.").ConfigureAwait(false);
     }
 
-    private static AcquisitionOutcome Found(FfmpegCandidate candidate) =>
-        new() { Status = AcquisitionStatus.Found, Candidate = candidate, ExitCode = 0 };
+    private static AcquisitionOutcome Found(FfmpegCandidate candidate, FfmpegInfoResult infoResult) =>
+        new() { Status = AcquisitionStatus.Found, Candidate = candidate, InfoResult = infoResult, ExitCode = 0 };
 
     private static AcquisitionOutcome Exit(int code) =>
         new() { Status = AcquisitionStatus.Exit, ExitCode = code };

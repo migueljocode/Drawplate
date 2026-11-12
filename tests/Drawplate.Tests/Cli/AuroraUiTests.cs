@@ -145,4 +145,50 @@ public sealed class AuroraUiTests
         Assert.Contains("FFmpeg", plain, StringComparison.Ordinal);
         Assert.Contains("Hardware", plain, StringComparison.Ordinal);
     }
+
+    [Theory]
+    [InlineData("[A", "Up")]
+    [InlineData("OA", "Up")]
+    [InlineData("[B", "Down")]
+    [InlineData("OB", "Down")]
+    [InlineData("[5~", "PageUp")]
+    [InlineData("[6~", "PageDown")]
+    [InlineData("[H", "Home")]
+    [InlineData("[F", "End")]
+    [InlineData("[<64;20;10M", "WheelUp")]
+    [InlineData("[<65;20;10M", "WheelDown")]
+    [InlineData("[<0;12;4m", "None")]
+    [InlineData("[999~", "None")]
+    public void TerminalInput_DecodeEscapeSequence_MapsScrollAndNeverQuits(string seq, string expected)
+    {
+        var action = TerminalInput.DecodeEscapeSequence(seq);
+        Assert.Equal(expected, action.ToString());
+        Assert.NotEqual("Quit", action.ToString());
+    }
+
+    [Fact]
+    public void BrandLogo_WithTopMargin_AddsBlankRowsAboveBanner()
+    {
+        var lines = BrandLogo.RenderLinesAt(90, utf8: true, timeSeconds: 0.4, reveal: 1.0, topMargin: BrandLogo.TopMargin);
+        Assert.True(lines.Count > BrandLogo.TopMargin);
+        for (var i = 0; i < BrandLogo.TopMargin; i++)
+        {
+            Assert.Equal(string.Empty, lines[i]);
+        }
+
+        Assert.All(lines, line => Assert.True(AnsiText.VisibleLength(line) < 90));
+    }
+
+    [Fact]
+    public void RichStatusView_WriteEncoders_RendersPanel()
+    {
+        using var sw = new StringWriter();
+        var theme = new Theme(Colors: true, Utf8Glyphs: true, Width: 80, IsInteractive: true, IsTerminal: true, CanRedraw: true);
+        RichStatusView.WriteEncoders(sw, [EncoderKind.Nvenc, EncoderKind.Cpu], "Note: driver check", theme);
+
+        var plain = AnsiText.Strip(sw.ToString());
+        Assert.Contains("AVAILABLE ENCODERS", plain, StringComparison.Ordinal);
+        Assert.Contains("nvenc", plain, StringComparison.Ordinal);
+        Assert.Contains("cpu", plain, StringComparison.Ordinal);
+    }
 }

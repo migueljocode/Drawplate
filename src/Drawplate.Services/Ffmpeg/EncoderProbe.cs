@@ -22,6 +22,7 @@ public sealed class EncoderProbe
     private readonly TimeSpan _probeTimeout;
     private readonly Action<string>? _log;
     private readonly Func<string, IEnumerable<string>> _listDirectory;
+    private readonly Lock _logLock = new();
 
     public EncoderProbe(
         IProcessLauncher launcher,
@@ -48,13 +49,9 @@ public sealed class EncoderProbe
     {
         ArgumentNullException.ThrowIfNull(info);
 
-        var results = ImmutableArray.CreateBuilder<ProbeResult>(kinds.Length);
-        foreach (var kind in kinds)
-        {
-            results.Add(await ProbeKindAsync(info, kind, ct).ConfigureAwait(false));
-        }
-
-        return results.ToImmutable();
+        var tasks = kinds.Select(kind => ProbeKindAsync(info, kind, ct)).ToArray();
+        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+        return [.. results];
     }
 
     private static string FfmpegEncoderName(EncoderKind kind) => kind switch
@@ -121,7 +118,7 @@ public sealed class EncoderProbe
     private async Task<ProbeResult> RunProbeAsync(FfmpegInfo info, EncoderKind kind, VaapiTarget? vaapi, CancellationToken ct)
     {
         var argv = FfmpegArgv.Probe(kind, vaapi).ToArray();
-        _log?.Invoke($"probe {EncoderSets.Id(kind)}: {string.Join(' ', argv)}");
+        Log($"probe {EncoderSets.Id(kind)}: {string.Join(' ', argv)}");
 
         IRunningProcess process;
         try
@@ -159,9 +156,22 @@ public sealed class EncoderProbe
         }
     }
 
+    private void Log(string message)
+    {
+        if (_log is null)
+        {
+            return;
+        }
+
+        lock (_logLock)
+        {
+            _log(message);
+        }
+    }
+
     private ProbeResult LogFailure(ProbeResult result)
     {
-        _log?.Invoke($"probe {EncoderSets.Id(result.Kind)} failed: {result.StderrTail}");
+        Log($"probe {EncoderSets.Id(result.Kind)} failed: {result.StderrTail}");
         return result;
     }
 }
