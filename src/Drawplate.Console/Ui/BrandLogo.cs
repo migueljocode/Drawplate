@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 
-using Drawplate.Console.Cli;
 
 namespace Drawplate.Console.Ui;
 
@@ -83,7 +82,7 @@ internal static class BrandLogo
         }
 
         var dot = utf8 ? "◆" : "*";
-        var subText = subtitle ?? $"H.264 / AAC Video Transcoder  {(utf8 ? "·" : "-")}  v{VersionInfo.Current}";
+        var subText = subtitle ?? "H.264 / AAC Video Transcoder";
         var fullSub = $"{dot} {subText}";
         var subPad = Math.Max(0, (usable - fullSub.Length) / 2);
         var accent = Gradient.Wave(Palette.AuroraBright, 0.4, timeSeconds * 0.25);

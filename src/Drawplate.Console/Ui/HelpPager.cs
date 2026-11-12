@@ -53,7 +53,8 @@ internal static class HelpPager
 
     private static void RenderInlineAnimated(TextWriter stdout, int width, bool utf8, IReadOnlyList<string> bodyLines, bool allowSkip)
     {
-        var finalHeader = BrandLogo.RenderLinesAt(width, utf8, timeSeconds: 0.3, reveal: 1.0, topMargin: BrandLogo.TopMargin);
+        var helpSubtitle = $"H.264 / AAC Video Transcoder  {(utf8 ? "·" : "-")}  v{Cli.VersionInfo.Current}";
+        var finalHeader = BrandLogo.RenderLinesAt(width, utf8, timeSeconds: 0.3, reveal: 1.0, subtitle: helpSubtitle, topMargin: BrandLogo.TopMargin);
         var headerHeight = finalHeader.Count;
         var started = Stopwatch.GetTimestamp();
 
@@ -69,7 +70,7 @@ internal static class HelpPager
                 }
 
                 var elapsed = Stopwatch.GetElapsedTime(started).TotalSeconds;
-                var frameLines = BrandLogo.RenderLinesAt(width, utf8, elapsed, reveal: step / 10.0, topMargin: BrandLogo.TopMargin);
+                var frameLines = BrandLogo.RenderLinesAt(width, utf8, elapsed, reveal: step / 10.0, subtitle: helpSubtitle, topMargin: BrandLogo.TopMargin);
                 var sb = new StringBuilder(512);
                 sb.Append("\u001b[?2026h");
                 if (step > 1)
@@ -125,7 +126,7 @@ internal static class HelpPager
 
                 var elapsed = clock.Elapsed.TotalSeconds;
                 var reveal = Math.Clamp((elapsed + 0.08) / 0.34, 0.2, 1.0);
-                var headerLines = BrandLogo.RenderLinesAt(width, utf8, elapsed, reveal: reveal, topMargin: BrandLogo.TopMargin);
+                var headerLines = BrandLogo.RenderLinesAt(width, utf8, elapsed, reveal: reveal, subtitle: $"H.264 / AAC Video Transcoder  {(utf8 ? "·" : "-")}  v{Cli.VersionInfo.Current}", topMargin: BrandLogo.TopMargin);
                 var headerRows = headerLines.Count + 1;
                 var bodyRows = Math.Max(4, height - headerRows - 1);
                 var maxOffset = Math.Max(0, bodyLines.Count - bodyRows);
@@ -284,7 +285,7 @@ internal static class HelpPager
         var dot = utf8 ? "·" : "-";
         var diamond = utf8 ? "◆" : "*";
         var searchNote = string.IsNullOrEmpty(searchQuery) ? string.Empty : $"  {dot}  /{searchQuery} (n/N)";
-        var statusRaw = $"  {diamond} Drawplate Help  {offset + 1}-{shownEnd}/{bodyLines.Count}  {pctLabel}  {dot}  ↑/↓ scroll  space/b  g/G  /search  q{searchNote}";
+        var statusRaw = $"  {diamond} Drawplate v{Cli.VersionInfo.Current} Help  {offset + 1}-{shownEnd}/{bodyLines.Count}  {pctLabel}  {dot}  ↑/↓ scroll  space/b  g/G  /search  q{searchNote}";
         var statusPadded = statusRaw.Length >= maxCols ? statusRaw[..maxCols] : statusRaw.PadRight(maxCols);
 
         sb.Append(CultureInfo.InvariantCulture, $"\u001b[{height};1H")
