@@ -36,11 +36,13 @@ internal static class AppHost
         }
         catch (OperationCanceledException)
         {
+            ScreenGuard.EmergencyRestore();
             global::System.Console.Error.WriteLine(Messages.N_INT().Text);
             return (int)ExitCode.Interrupted;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            ScreenGuard.EmergencyRestore();
             global::System.Console.Error.WriteLine($"Unexpected error: {ex.Message}");
             return (int)ExitCode.Failure;
         }
@@ -63,7 +65,7 @@ internal static class AppHost
 
     private static int? Dispatch(ParsedCommand parsed, TextWriter stdout, TextWriter stderr, CancellationToken ct) => parsed.Kind switch
     {
-        CommandKind.Help => Print(stdout, HelpText.Render()),
+        CommandKind.Help => RunHelp(stdout),
         CommandKind.Version => Print(stdout, Messages.N_VERSION(VersionInfo.Current) + "\n"),
         CommandKind.Error => Fail(parsed.Error!, stderr),
         CommandKind.Setup => RunSetup(parsed.Options!, stdout, stderr, ct),
@@ -71,9 +73,30 @@ internal static class AppHost
         _ => null,
     };
 
+    private static int RunHelp(TextWriter stdout)
+    {
+        var theme = CreateTheme(stdout);
+        if (theme.Colors)
+        {
+            HelpView.Show(stdout, theme);
+            return (int)ExitCode.Ok;
+        }
+
+        return Print(stdout, HelpText.Render());
+    }
+
     private static int RunSetup(RawOptions options, TextWriter stdout, TextWriter stderr, CancellationToken ct)
     {
         var platform = PlatformDetector.Detect(PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")), File.Exists);
+        using var consoleGuard = ReferenceEquals(stdout, global::System.Console.Out) && !global::System.Console.IsOutputRedirected
+            ? ConsoleGuard.EnterInteractive()
+            : null;
+        var theme = CreateTheme(stdout, consoleGuard);
+        if (theme.Colors)
+        {
+            RichStatusView.WriteSetupBanner(stdout, theme, platform);
+        }
+
         var info = new FfmpegInfoService(new ProcessLauncher());
         var flow = new AcquisitionFlow(info, CreatePrompt(stdout), new InstallRunner(new ProcessLauncher()), platform, stdout, stderr);
         var result = flow.RunAsync(AcquisitionMode.SetupCommand, options.InstallDeps, options.NoInstall, options.FfmpegPath, ct)
@@ -84,9 +107,19 @@ internal static class AppHost
     private static int RunDoctor(RawOptions options, TextWriter stdout, TextWriter stderr, CancellationToken ct)
     {
         var platform = PlatformDetector.Detect(PathFolders.Parse(Environment.GetEnvironmentVariable("PATH")), File.Exists);
+        using var consoleGuard = ReferenceEquals(stdout, global::System.Console.Out) && !global::System.Console.IsOutputRedirected
+            ? ConsoleGuard.EnterInteractive()
+            : null;
+        var theme = CreateTheme(stdout, consoleGuard);
         var info = new FfmpegInfoService(new ProcessLauncher());
         var report = new DoctorService(info, new ProcessLauncher(), platform)
             .RunAsync(options.FfmpegPath, ct).GetAwaiter().GetResult();
+
+        if (theme.Colors)
+        {
+            RichStatusView.WriteDoctor(stdout, report, platform, theme);
+            return report.ExitCode;
+        }
 
         foreach (var line in report.Lines)
         {
@@ -158,7 +191,11 @@ internal static class AppHost
             return RunSetup(options, stdout, stderr, ct);
         }
 
-        var renderer = RendererFactory.Create(stdout, CreateTheme());
+        using var consoleGuard = ReferenceEquals(stdout, global::System.Console.Out) && !global::System.Console.IsOutputRedirected
+            ? ConsoleGuard.EnterInteractive()
+            : null;
+        var theme = CreateTheme(stdout, consoleGuard);
+        var renderer = RendererFactory.Create(stdout, theme);
 
         // Input and output problems are reported before FFmpeg is touched, so they start no process.
         WorkPlan? work = null;
@@ -222,9 +259,17 @@ internal static class AppHost
         var chain = built.Chain;
         if (options.Interactive)
         {
-            var menu = new MenuService(CreatePrompt(stdout)).Run(working, convert.Quality, convert.MaxSize);
+            var menu = theme.Colors && theme.IsInteractive
+                ? RichInteractiveMenu.Run(stdout, theme, working, convert.Quality, convert.MaxSize)
+                : new MenuService(CreatePrompt(stdout)).Run(working, convert.Quality, convert.MaxSize);
             if (menu.Error is { } menuError)
             {
+                if (menuError.Id == "N-INT")
+                {
+                    stderr.WriteLine(menuError.Text);
+                    return menuError.ExitCode;
+                }
+
                 return Fail(menuError, stderr);
             }
 
@@ -283,19 +328,26 @@ internal static class AppHost
         return Convert(work!, convert, candidate.Path, chain, vaapi, note, os, renderer, log, ct);
     }
 
-    private static Theme CreateTheme()
+    private static Theme CreateTheme(TextWriter stdout, ConsoleGuard? consoleGuard = null)
     {
+        var isConsoleOut = ReferenceEquals(stdout, global::System.Console.Out) && !global::System.Console.IsOutputRedirected;
         var environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
         {
             ["NO_COLOR"] = Environment.GetEnvironmentVariable("NO_COLOR"),
             ["TERM"] = Environment.GetEnvironmentVariable("TERM"),
         };
-        return Theme.Detect(
-            !global::System.Console.IsOutputRedirected,
+        var detected = Theme.Detect(
+            isConsoleOut,
             environment,
             global::System.Console.OutputEncoding.CodePage,
             ConsoleWidth(),
             !global::System.Console.IsInputRedirected);
+        if (consoleGuard is not null && !consoleGuard.VtEnabled)
+        {
+            return detected with { Colors = false, CanRedraw = false };
+        }
+
+        return detected;
     }
 
     private static int? ConsoleWidth()
