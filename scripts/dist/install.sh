@@ -81,6 +81,12 @@ if [ "$UTF8" -eq 1 ]; then
     G_BL=$(printf '\342\225\260')
     G_BR=$(printf '\342\225\257')
     G_BAR=$(printf '\342\224\201')
+    G_D1=$(printf '\342\225\224')
+    G_D2=$(printf '\342\225\227')
+    G_D3=$(printf '\342\225\232')
+    G_D4=$(printf '\342\225\235')
+    G_D5=$(printf '\342\225\221')
+    G_D6=$(printf '\342\225\220')
     G_OK=$(printf '\342\234\223')
     G_SKIP=$(printf '\342\227\213')
     G_ERR=$(printf '\342\234\227')
@@ -88,9 +94,10 @@ if [ "$UTF8" -eq 1 ]; then
     G_DOT=$(printf '\302\267')
 else
     G_FULL='#' G_H='-' G_V='|' G_TL='+' G_TR='+' G_BL='+' G_BR='+'
+    G_D1='+' G_D2='+' G_D3='+' G_D4='+' G_D5='|' G_D6='='
     G_BAR='=' G_OK='+' G_SKIP='o' G_ERR='x' G_WARN='!' G_DOT='|'
 fi
-export G_FULL G_H G_TL G_TR G_BL G_BR G_BAR
+export G_FULL G_H G_TL G_TR G_BL G_BR G_BAR G_D1 G_D2 G_D3 G_D4 G_D5 G_D6
 DP_ESC=$ESC
 DP_TC=$TRUECOLOR
 export DP_ESC DP_TC
@@ -127,13 +134,15 @@ ui_gradient() {
         map["#"] = ENVIRON["G_FULL"]; map["-"] = ENVIRON["G_H"]
         map["<"] = ENVIRON["G_TL"]; map[">"] = ENVIRON["G_TR"]
         map["{"] = ENVIRON["G_BL"]; map["}"] = ENVIRON["G_BR"]
+        map["1"] = ENVIRON["G_D1"]; map["2"] = ENVIRON["G_D2"]; map["3"] = ENVIRON["G_D3"]
+        map["4"] = ENVIRON["G_D4"]; map["5"] = ENVIRON["G_D5"]; map["6"] = ENVIRON["G_D6"]
         n = length(s)
         for (i = 1; i <= n; i++) {
             ch = substr(s, i, 1)
             if (ch == " ") { printf " "; continue }
             grad((i - 1 + row * 3) / (w + 14))
             printf "%s", fg(int(R), int(G), int(B))
-            printf "%s", (ch in map) ? map[ch] : ch
+            printf "%s", (ENVIRON["DP_RAW"] != "1" && ch in map) ? map[ch] : ch
         }
         printf "%s[0m\n", ENVIRON["DP_ESC"]
     }' 2>/dev/null
@@ -192,23 +201,49 @@ ui_banner() {
         printf 'Drawplate installer %s\n' "$ver"
         return
     fi
+    cols=$(tput cols 2>/dev/null || echo 80)
     printf '\n'
-    row=0
-    while IFS= read -r art; do
-        printf '  '
-        ui_gradient "$art" "$row" 53
-        row=$((row + 1))
-        sleep 0.04 2>/dev/null || true
-    done <<'ART'
-####  ####   ###  #   # ####  #      ###  ##### #####
-#   # #   # #   # #   # #   # #     #   #   #   #
-#   # ####  ##### # # # ####  #     #####   #   ####
-#   # #  #  #   # ## ## #     #     #   #   #   #
-####  #   # #   # #   # #     ##### #   #   #   #####
-ART
-    printf '  '
-    ui_gradient "$(ui_repeat - 53)" 5 53
-    printf '  %sDrawplate installer%s %s%s%s\n\n' "$C_SOFT" "$C_RESET" "$C_ACCENT" "$ver" "$C_RESET"
+    W=0
+    DP_RAW=0
+    if [ "$UTF8" -eq 1 ] && [ "$cols" -ge 80 ]; then
+        W=78
+        ART=$(cat <<'DPART'
+######2 ######2  #####2 ##2    ##2######2 ##2      #####2 ########2#######2
+##166##2##166##2##166##2##5    ##5##166##2##5     ##166##2366##1664##166664
+##5  ##5######14#######5##5 #2 ##5######14##5     #######5   ##5   #####2  
+##5  ##5##166##2##166##5##5###2##5##16664 ##5     ##166##5   ##5   ##1664  
+######14##5  ##5##5  ##53###1###14##5     #######2##5  ##5   ##5   #######2
+3666664 364  364364  364 36643664 364     36666664364  364   364   36666664
+DPART
+)
+    elif [ "$UTF8" -ne 1 ] && [ "$cols" -ge 64 ]; then
+        W=62
+        DP_RAW=1
+        ART=$(cat <<'DPART'
+ ____  ____      ___        ______  _        _  _____ _____ 
+|  _ \|  _ \    / \ \      / /  _ \| |      / \|_   _| ____|
+| | | | |_) |  / _ \ \ /\ / /| |_) | |     / _ \ | | |  _|  
+| |_| |  _ <  / ___ \ V  V / |  __/| |___ / ___ \| | | |___ 
+|____/|_| \_\/_/   \_\_/\_/  |_|   |_____/_/   \_\_| |_____|
+DPART
+)
+    else
+        printf '  %sDRAWPLATE%s\n' "$C_ACCENT" "$C_RESET"
+    fi
+    export DP_RAW
+    if [ "$W" -gt 0 ]; then
+        row=0
+        while IFS= read -r art; do
+            printf '  '
+            ui_gradient "$art" "$row" "$W"
+            row=$((row + 1))
+            sleep 0.04 2>/dev/null || true
+        done <<DPLOOP
+$ART
+DPLOOP
+    fi
+    DP_RAW=0
+    printf '  %s%s%s %s%s%s\n\n' "$C_SOFT" "Drawplate installer" "$C_RESET" "$C_ACCENT" "$ver" "$C_RESET"
 }
 
 ui_step() {

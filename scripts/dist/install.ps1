@@ -110,7 +110,7 @@ function Initialize-UiStyle {
     }
     if ($script:Utf8) {
         $script:G = @{
-            Full = [string][char]0x2588; H = [string][char]0x2500; V = [string][char]0x2502
+            Full = [string][char]0x2588; H = [string][char]0x2500; D1 = [string][char]0x2554; D2 = [string][char]0x2557; D3 = [string][char]0x255A; D4 = [string][char]0x255D; D5 = [string][char]0x2551; D6 = [string][char]0x2550; V = [string][char]0x2502
             TL = [string][char]0x256D; TR = [string][char]0x256E; BL = [string][char]0x2570; BR = [string][char]0x256F
             Bar = [string][char]0x2501; Ok = [string][char]0x2713; Skip = [string][char]0x25CB
             Err = [string][char]0x2717; Warn = [string][char]0x25B2; Dot = [string][char]0x00B7
@@ -124,7 +124,7 @@ function Initialize-UiStyle {
         }
         $script:Spinner = @('|', '/', '-', '\')
     }
-    $script:ArtMap = @{ '#' = $script:G.Full; '-' = $script:G.H; '<' = $script:G.TL; '>' = $script:G.TR; '{' = $script:G.BL; '}' = $script:G.BR }
+    $script:ArtMap = @{ '#' = $script:G.Full; '-' = $script:G.H; '<' = $script:G.TL; '>' = $script:G.TR; '{' = $script:G.BL; '}' = $script:G.BR; '1' = $script:G.D1; '2' = $script:G.D2; '3' = $script:G.D3; '4' = $script:G.D4; '5' = $script:G.D5; '6' = $script:G.D6 }
 }
 
 # Four-stop gradient: green, cyan, blue, violet.
@@ -143,7 +143,7 @@ function Get-GradientColor([double]$T) {
 }
 
 # Paints ASCII art diagonally; art symbols map to glyphs.
-function Format-GradientArt([string]$Art, [int]$Row, [int]$Width) {
+function Format-GradientArt([string]$Art, [int]$Row, [int]$Width, [switch]$Raw) {
     if (-not $script:UseUi) { return $Art }
     $sb = [System.Text.StringBuilder]::new($Art.Length * 24)
     for ($i = 0; $i -lt $Art.Length; $i++) {
@@ -154,7 +154,7 @@ function Format-GradientArt([string]$Art, [int]$Row, [int]$Width) {
         }
         $rgb = Get-GradientColor (($i + $Row * 3) / ($Width + 14.0))
         [void]$sb.Append((Get-Fg $rgb[0] $rgb[1] $rgb[2]))
-        if ($script:ArtMap.ContainsKey($ch)) { [void]$sb.Append($script:ArtMap[$ch]) } else { [void]$sb.Append($ch) }
+        if ((-not $Raw) -and $script:ArtMap.ContainsKey($ch)) { [void]$sb.Append($script:ArtMap[$ch]) } else { [void]$sb.Append($ch) }
     }
     [void]$sb.Append($script:C.Reset)
     return $sb.ToString()
@@ -190,19 +190,41 @@ function Write-Banner([string]$PkgVersion) {
         return
     }
     $c = $script:C
-    $art = @(
-        '####  ####   ###  #   # ####  #      ###  ##### #####',
-        '#   # #   # #   # #   # #   # #     #   #   #   #',
-        '#   # ####  ##### # # # ####  #     #####   #   ####',
-        '#   # #  #  #   # ## ## #     #     #   #   #   #',
-        '####  #   # #   # #   # #     ##### #   #   #   #####'
-    )
+    try { $cols = [Console]::WindowWidth } catch { $cols = 80 }
+    if ($cols -lt 1) { $cols = 80 }
+    $raw = $false
+    if ($script:Utf8 -and $cols -ge 80) {
+        $width = 78
+        $art = @(
+        '######2 ######2  #####2 ##2    ##2######2 ##2      #####2 ########2#######2',
+        '##166##2##166##2##166##2##5    ##5##166##2##5     ##166##2366##1664##166664',
+        '##5  ##5######14#######5##5 #2 ##5######14##5     #######5   ##5   #####2  ',
+        '##5  ##5##166##2##166##5##5###2##5##16664 ##5     ##166##5   ##5   ##1664  ',
+        '######14##5  ##5##5  ##53###1###14##5     #######2##5  ##5   ##5   #######2',
+        '3666664 364  364364  364 36643664 364     36666664364  364   364   36666664'
+        )
+    }
+    elseif ((-not $script:Utf8) -and $cols -ge 64) {
+        $width = 62
+        $raw = $true
+        $art = @(
+        ' ____  ____      ___        ______  _        _  _____ _____ ',
+        '|  _ \|  _ \    / \ \      / /  _ \| |      / \|_   _| ____|',
+        '| | | | |_) |  / _ \ \ /\ / /| |_) | |     / _ \ | | |  _|  ',
+        '| |_| |  _ <  / ___ \ V  V / |  __/| |___ / ___ \| | | |___ ',
+        '|____/|_| \_\/_/   \_\_/\_/  |_|   |_____/_/   \_\_| |_____|'
+        )
+    }
+    else {
+        $width = 0
+        $art = @()
+    }
     Write-Ui ''
+    if ($width -eq 0) { Write-Ui ('  ' + $c.Accent + 'DRAWPLATE' + $c.Reset) }
     for ($row = 0; $row -lt $art.Count; $row++) {
-        Write-Ui ('  ' + (Format-GradientArt $art[$row] $row 53))
+        Write-Ui ('  ' + (Format-GradientArt $art[$row] $row $width -Raw:$raw))
         Start-Sleep -Milliseconds 40
     }
-    Write-Ui ('  ' + (Format-GradientArt ('-' * 53) 5 53))
     Write-Ui ('  ' + $c.Soft + 'Drawplate installer' + $c.Reset + ' ' + $c.Accent + $PkgVersion + $c.Reset)
     Write-Ui ''
 }
