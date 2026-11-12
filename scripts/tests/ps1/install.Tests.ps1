@@ -18,7 +18,7 @@ Describe 'Drawplate installer contract' {
             Copy-Item -LiteralPath $BinaryPath -Destination (Join-Path $folder 'drawplate.exe') -Force
             Copy-Item -LiteralPath (Join-Path $script:root 'LICENSE') -Destination (Join-Path $folder 'LICENSE') -Force
             Copy-Item -LiteralPath (Join-Path $script:root 'THIRD-PARTY-NOTICES.md') -Destination (Join-Path $folder 'THIRD-PARTY-NOTICES.md') -Force
-            $name = "drawplate-$Version-win-x64.zip"
+            $name = "drawplate-v$Version-win-x64.zip"
             $archive = Join-Path $folder $name
             Compress-Archive -Path @((Join-Path $folder 'drawplate.exe'), (Join-Path $folder 'LICENSE'), (Join-Path $folder 'THIRD-PARTY-NOTICES.md')) -DestinationPath $archive
             $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
@@ -149,7 +149,7 @@ Describe 'Drawplate installer contract' {
         [System.IO.File]::WriteAllText((Join-Path $folder 'drawplate.exe'), 'not an executable')
         Copy-Item -LiteralPath (Join-Path $script:root 'LICENSE') -Destination (Join-Path $folder 'LICENSE')
         Copy-Item -LiteralPath (Join-Path $script:root 'THIRD-PARTY-NOTICES.md') -Destination (Join-Path $folder 'THIRD-PARTY-NOTICES.md')
-        $name = 'drawplate-1.2.4-win-x64.zip'
+        $name = 'drawplate-v1.2.4-win-x64.zip'
         $archive = Join-Path $folder $name
         Compress-Archive -Path @((Join-Path $folder 'drawplate.exe'), (Join-Path $folder 'LICENSE'), (Join-Path $folder 'THIRD-PARTY-NOTICES.md')) -DestinationPath $archive
         $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()

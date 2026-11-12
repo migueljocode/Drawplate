@@ -88,8 +88,9 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           mkdir -p dist
+          cp LICENSE THIRD-PARTY-NOTICES.md publish/
           tar -czf "dist/drawplate-${{ inputs.version }}-${{ matrix.rid }}.tar.gz" \
-            -C publish drawplate
+            -C publish drawplate LICENSE THIRD-PARTY-NOTICES.md
           cp LICENSE dist/ 2>/dev/null || true
           cp THIRD-PARTY-NOTICES.md dist/ 2>/dev/null || true
 
@@ -98,7 +99,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path dist -Force | Out-Null
-          Compress-Archive -Path publish/drawplate.exe -DestinationPath "dist/drawplate-${{ inputs.version }}-${{ matrix.rid }}.zip"
+          Compress-Archive -Path publish/drawplate.exe, LICENSE, THIRD-PARTY-NOTICES.md -DestinationPath "dist/drawplate-${{ inputs.version }}-${{ matrix.rid }}.zip"
           if (Test-Path LICENSE) { Copy-Item LICENSE dist/ }
           if (Test-Path THIRD-PARTY-NOTICES.md) { Copy-Item THIRD-PARTY-NOTICES.md dist/ }
 
@@ -136,9 +137,7 @@ jobs:
       - name: SHA256SUMS
         working-directory: dist
         run: |
-          find . -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print0 \
-            | sort -z \
-            | xargs -0 sha256sum > SHA256SUMS
+          sha256sum *.tar.gz *.zip > SHA256SUMS
           cat SHA256SUMS
 
       - name: Create GitHub release
