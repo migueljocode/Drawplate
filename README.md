@@ -13,7 +13,9 @@ Drawplate installs into user space and never needs elevation:
 ```sh
 # Linux and macOS
 curl -fsSL https://raw.githubusercontent.com/migueljocode/Drawplate/main/scripts/dist/install.sh | sh
+```
 
+```powershell
 # Windows
 irm https://raw.githubusercontent.com/migueljocode/Drawplate/main/scripts/dist/install.ps1 | iex
 ```
