@@ -74,41 +74,114 @@ function Write-Ui([string]$Text) {
     [Console]::Out.Write([char]10)
 }
 
-function Write-AuroraLine([string]$Text) {
-    if (-not $script:UseUi) {
-        Write-Ui $Text
-        return
+$script:LabelWidth = 26
+$script:G = @{}
+$script:C = @{}
+$script:Spinner = @()
+$script:Utf8 = $false
+$script:TrueColor = $false
+
+function Get-Fg([int]$R, [int]$G, [int]$B) {
+    if ($script:TrueColor) { return "$($script:Esc)[38;2;$R;$G;$($B)m" }
+    $index = 16 + 36 * [int][Math]::Floor($R / 51.0 + 0.5) + 6 * [int][Math]::Floor($G / 51.0 + 0.5) + [int][Math]::Floor($B / 51.0 + 0.5)
+    return "$($script:Esc)[38;5;$($index)m"
+}
+
+# Glyphs are built from code points so this file stays ASCII-only.
+function Initialize-UiStyle {
+    $script:Utf8 = $false
+    if ($script:UseUi -or $script:UseErrUi) {
+        try {
+            if ([Console]::OutputEncoding.CodePage -ne 65001) {
+                [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+            }
+            $script:Utf8 = ([Console]::OutputEncoding.CodePage -eq 65001)
+        }
+        catch { $script:Utf8 = $false }
     }
+    $script:TrueColor = ($env:COLORTERM -eq 'truecolor') -or ($env:COLORTERM -eq '24bit') -or ($env:OS -eq 'Windows_NT')
     $e = $script:Esc
-    $n = $Text.Length
-    if ($n -le 0) {
-        Write-Ui ''
-        return
+    $script:C = @{
+        Reset = "$e[0m"; Bold = "$e[1m"
+        Ok = (Get-Fg 52 211 153); Info = (Get-Fg 56 189 248); Accent = (Get-Fg 34 211 238)
+        Text = (Get-Fg 241 245 249); Soft = (Get-Fg 148 163 184); Muted = (Get-Fg 100 116 139)
+        Err = (Get-Fg 248 113 113); Warn = (Get-Fg 251 191 36); G1 = (Get-Fg 16 185 129); G4 = (Get-Fg 139 92 246)
+        Dim = (Get-Fg 51 65 85)
     }
-    $sb = [System.Text.StringBuilder]::new($n * 20)
-    for ($i = 0; $i -lt $n; $i++) {
-        $ch = $Text[$i]
+    if ($script:Utf8) {
+        $script:G = @{
+            Full = [string][char]0x2588; H = [string][char]0x2500; V = [string][char]0x2502
+            TL = [string][char]0x256D; TR = [string][char]0x256E; BL = [string][char]0x2570; BR = [string][char]0x256F
+            Bar = [string][char]0x2501; Ok = [string][char]0x2713; Skip = [string][char]0x25CB
+            Err = [string][char]0x2717; Warn = [string][char]0x25B2; Dot = [string][char]0x00B7
+        }
+        $script:Spinner = @(0x280B, 0x2819, 0x2839, 0x2838, 0x283C, 0x2834, 0x2826, 0x2827, 0x2807, 0x280F | ForEach-Object { [string][char]$_ })
+    }
+    else {
+        $script:G = @{
+            Full = '#'; H = '-'; V = '|'; TL = '+'; TR = '+'; BL = '+'; BR = '+'
+            Bar = '='; Ok = '+'; Skip = 'o'; Err = 'x'; Warn = '!'; Dot = '|'
+        }
+        $script:Spinner = @('|', '/', '-', '\')
+    }
+    $script:ArtMap = @{ '#' = $script:G.Full; '-' = $script:G.H; '<' = $script:G.TL; '>' = $script:G.TR; '{' = $script:G.BL; '}' = $script:G.BR }
+}
+
+# Four-stop gradient: green, cyan, blue, violet.
+function Get-GradientColor([double]$T) {
+    if ($T -lt 0) { $T = 0 }
+    if ($T -gt 1) { $T = 1 }
+    $stops = @(@(16, 185, 129), @(6, 182, 212), @(59, 130, 246), @(139, 92, 246))
+    $segment = [Math]::Min(2, [int][Math]::Floor($T * 3))
+    $u = $T * 3 - $segment
+    $from = $stops[$segment]
+    $to = $stops[$segment + 1]
+    return [int[]]@(
+        [int]($from[0] + ($to[0] - $from[0]) * $u),
+        [int]($from[1] + ($to[1] - $from[1]) * $u),
+        [int]($from[2] + ($to[2] - $from[2]) * $u))
+}
+
+# Paints ASCII art diagonally; art symbols map to glyphs.
+function Format-GradientArt([string]$Art, [int]$Row, [int]$Width) {
+    if (-not $script:UseUi) { return $Art }
+    $sb = [System.Text.StringBuilder]::new($Art.Length * 24)
+    for ($i = 0; $i -lt $Art.Length; $i++) {
+        $ch = [string]$Art[$i]
         if ($ch -eq ' ') {
             [void]$sb.Append(' ')
             continue
         }
-        $t = if ($n -eq 1) { 0.0 } else { [double]$i / ($n - 1) }
-        if ($t -lt 0.5) {
-            $u = $t * 2.0
-            $r = [int](16 + (6 - 16) * $u)
-            $g = [int](185 + (182 - 185) * $u)
-            $b = [int](129 + (212 - 129) * $u)
+        $rgb = Get-GradientColor (($i + $Row * 3) / ($Width + 14.0))
+        [void]$sb.Append((Get-Fg $rgb[0] $rgb[1] $rgb[2]))
+        if ($script:ArtMap.ContainsKey($ch)) { [void]$sb.Append($script:ArtMap[$ch]) } else { [void]$sb.Append($ch) }
+    }
+    [void]$sb.Append($script:C.Reset)
+    return $sb.ToString()
+}
+
+function Format-ProgressBar([int]$Width, [double]$Fraction) {
+    $filled = [Math]::Min($Width, [Math]::Max(0, [int][Math]::Round($Fraction * $Width)))
+    $sb = [System.Text.StringBuilder]::new($Width * 24)
+    for ($i = 0; $i -lt $Width; $i++) {
+        if ($i -lt $filled) {
+            $rgb = Get-GradientColor ([double]$i / [Math]::Max(1, $Width - 1))
+            [void]$sb.Append((Get-Fg $rgb[0] $rgb[1] $rgb[2]))
         }
         else {
-            $u = ($t - 0.5) * 2.0
-            $r = [int](6 + (59 - 6) * $u)
-            $g = [int](182 + (130 - 182) * $u)
-            $b = [int](212 + (246 - 212) * $u)
+            [void]$sb.Append($script:C.Dim)
         }
-        [void]$sb.Append("$e[38;2;$r;$g;${b}m$ch")
+        [void]$sb.Append($script:G.Bar)
     }
-    [void]$sb.Append("$e[0m")
-    Write-Ui $sb.ToString()
+    [void]$sb.Append($script:C.Reset)
+    return $sb.ToString()
+}
+
+# Normalises "Finding release ........" to a fixed-width column.
+function Split-StepLabel([string]$Label) {
+    $text = $Label.TrimEnd(' ', '.')
+    $dots = [Math]::Max(0, $script:LabelWidth - $text.Length - 1)
+    return [pscustomobject]@{ Text = $text; Leader = ('.' * $dots) }
 }
 
 function Write-Banner([string]$PkgVersion) {
@@ -116,14 +189,21 @@ function Write-Banner([string]$PkgVersion) {
         Write-Ui "Drawplate installer $PkgVersion"
         return
     }
-    $e = $script:Esc
+    $c = $script:C
+    $art = @(
+        '####  ####   ###  #   # ####  #      ###  ##### #####',
+        '#   # #   # #   # #   # #   # #     #   #   #   #',
+        '#   # ####  ##### # # # ####  #     #####   #   ####',
+        '#   # #  #  #   # ## ## #     #     #   #   #   #',
+        '####  #   # #   # #   # #     ##### #   #   #   #####'
+    )
     Write-Ui ''
-    Write-AuroraLine '  ____  ____      _    __        ______  _        _  _____ _____'
-    Write-AuroraLine ' |  _ \|  _ \    / \   \ \      / /  _ \| |      / \|_   _| ____|'
-    Write-AuroraLine ' | | | | |_) |  / _ \   \ \ /\ / /| |_) | |     / _ \ | | |  _|  '
-    Write-AuroraLine ' | |_| |  _ <  / ___ \   \ V  V / |  __/| |___ / ___ \| | | |___ '
-    Write-AuroraLine ' |____/|_| \_\/_/   \_\   \_/\_/  |_|   |_____/_/   \_\_| |_____|'
-    Write-Ui "  $e[38;2;148;163;184mDrawplate installer $e[38;2;34;211;238m$PkgVersion$e[0m"
+    for ($row = 0; $row -lt $art.Count; $row++) {
+        Write-Ui ('  ' + (Format-GradientArt $art[$row] $row 53))
+        Start-Sleep -Milliseconds 40
+    }
+    Write-Ui ('  ' + (Format-GradientArt ('-' * 53) 5 53))
+    Write-Ui ('  ' + $c.Soft + 'Drawplate installer' + $c.Reset + ' ' + $c.Accent + $PkgVersion + $c.Reset)
     Write-Ui ''
 }
 
@@ -134,16 +214,36 @@ function Write-Step([string]$Tag, [string]$Label, [string]$Badge, [string]$Detai
         else { Write-Ui "$Tag $Label" }
         return
     }
-    $e = $script:Esc
-    $badgeColor = switch ($Badge) {
-        '[ok]' { "$e[38;2;52;211;153m" }
-        '[skipped]' { "$e[38;2;100;116;139m" }
-        default { "$e[38;2;56;189;248m" }
+    $c = $script:C
+    $parts = Split-StepLabel $Label
+    switch ($Badge) {
+        '[ok]' { $glyph = $script:G.Ok; $glyphColor = $c.Ok; $labelColor = $c.Text; $detailColor = $c.Soft }
+        '[skipped]' { $glyph = $script:G.Skip; $glyphColor = $c.Muted; $labelColor = $c.Muted; $detailColor = $c.Muted }
+        default { $glyph = $script:G.Skip; $glyphColor = $c.Info; $labelColor = $c.Text; $detailColor = $c.Soft }
     }
-    $line = "  $e[38;2;56;189;248m$Tag$e[0m $e[38;2;241;245;249m$Label$e[0m"
-    if ($Badge) { $line += " $badgeColor$Badge$e[0m" }
-    if ($Detail) { $line += " $e[38;2;148;163;184m$Detail$e[0m" }
-    Write-Ui $line
+    Write-Ui ('  ' + $glyphColor + $glyph + $c.Reset + '  ' + $c.Info + $Tag.Trim('[', ']') + $c.Reset + '  ' +
+        $labelColor + $parts.Text + $c.Reset + ' ' + $c.Muted + $parts.Leader + $c.Reset + '  ' + $detailColor + $Detail + $c.Reset)
+}
+
+function Write-UiNote([string]$Text) {
+    if (-not $script:UseUi) {
+        Write-Ui $Text
+        return
+    }
+    $c = $script:C
+    if ($Text.StartsWith('Note:')) {
+        Write-Ui ''
+        Write-Ui ('  ' + $c.Warn + $script:G.Warn + $c.Reset + ' ' + $c.Soft + $Text + $c.Reset)
+    }
+    else {
+        Write-Ui ('  ' + $c.Soft + $Text + $c.Reset)
+    }
+}
+
+function Format-BoxRow([string]$Plain, [string]$Colored, [int]$Inner) {
+    $c = $script:C
+    $pad = ' ' * [Math]::Max(0, $Inner - $Plain.Length)
+    return '  ' + $c.G1 + $script:G.V + $c.Reset + $Colored + $pad + $c.G4 + $script:G.V + $c.Reset
 }
 
 function Write-DoneBox([string]$PkgVersion, [string]$BinaryPath) {
@@ -155,49 +255,46 @@ function Write-DoneBox([string]$PkgVersion, [string]$BinaryPath) {
         Write-Ui '  drawplate setup        (shows how to install FFmpeg)'
         return
     }
-    $e = $script:Esc
+    $c = $script:C
+    $plain1 = "  o Installed Drawplate $PkgVersion"
+    $plain2 = "    Path: $BinaryPath"
+    $plain3 = '    Next: drawplate --help  .  drawplate setup'
+    $inner = 58
+    foreach ($plain in @($plain1, $plain2, $plain3)) {
+        if (($plain.Length + 2) -gt $inner) { $inner = $plain.Length + 2 }
+    }
     Write-Ui ''
-    Write-AuroraLine '  +--------------------------------------------------------------+'
-    Write-Ui "  $e[38;2;8;145;178m|$e[0m $e[38;2;52;211;153m[ok]$e[0m Installed Drawplate $e[38;2;34;211;238m$PkgVersion$e[0m"
-    Write-Ui "  $e[38;2;8;145;178m|$e[0m $e[38;2;148;163;184mPath:$e[0m $e[38;2;241;245;249m$BinaryPath$e[0m"
-    Write-Ui "  $e[38;2;8;145;178m|$e[0m $e[38;2;148;163;184mNext:$e[0m $e[38;2;56;189;248mdrawplate --help$e[0m  |  $e[38;2;56;189;248mdrawplate setup$e[0m"
-    Write-AuroraLine '  +--------------------------------------------------------------+'
+    Write-Ui ('  ' + (Format-GradientArt ('<' + ('-' * $inner) + '>') 0 ($inner + 2)))
+    Write-Ui (Format-BoxRow '' '' $inner)
+    Write-Ui (Format-BoxRow $plain1 ('  ' + $c.Ok + $script:G.Ok + $c.Reset + ' ' + $c.Bold + $c.Text + 'Installed Drawplate' + $c.Reset + ' ' + $c.Accent + $PkgVersion + $c.Reset) $inner)
+    Write-Ui (Format-BoxRow $plain2 ('    ' + $c.Muted + 'Path:' + $c.Reset + ' ' + $c.Text + $BinaryPath + $c.Reset) $inner)
+    Write-Ui (Format-BoxRow $plain3 ('    ' + $c.Muted + 'Next:' + $c.Reset + ' ' + $c.Info + 'drawplate --help' + $c.Reset + '  ' + $c.Muted + $script:G.Dot + $c.Reset + '  ' + $c.Info + 'drawplate setup' + $c.Reset) $inner)
+    Write-Ui (Format-BoxRow '' '' $inner)
+    Write-Ui ('  ' + (Format-GradientArt ('{' + ('-' * $inner) + '}') 4 ($inner + 2)))
 }
 
-function Format-GradientBar([int]$Width, [double]$Fraction) {
-    $e = $script:Esc
-    $filled = [Math]::Min($Width, [Math]::Max(0, [int][Math]::Round($Fraction * $Width)))
-    $sb = [System.Text.StringBuilder]::new($Width * 20)
-    for ($i = 0; $i -lt $Width; $i++) {
-        if ($i -lt $filled) {
-            $t = if ($Width -le 1) { 0.0 } else { [double]$i / ($Width - 1) }
-            if ($t -lt 0.5) {
-                $u = $t * 2.0
-                $r = [int](16 + (6 - 16) * $u)
-                $g = [int](185 + (182 - 185) * $u)
-                $b = [int](129 + (212 - 129) * $u)
-            }
-            else {
-                $u = ($t - 0.5) * 2.0
-                $r = [int](6 + (59 - 6) * $u)
-                $g = [int](182 + (130 - 182) * $u)
-                $b = [int](212 + (246 - 212) * $u)
-            }
-            [void]$sb.Append("$e[38;2;$r;$g;${b}m#")
-        }
-        else {
-            [void]$sb.Append("$e[38;2;30;41;59m-")
-        }
-    }
-    [void]$sb.Append("$e[0m")
-    return $sb.ToString()
+# Live download line: spinner, step, label, gradient bar, percent, size, speed.
+function Write-DownloadLine([long]$Received, $Total, [double]$Seconds, [int]$Tick) {
+    $c = $script:C
+    $parts = Split-StepLabel 'Downloading Drawplate'
+    $hasTotal = $Total -and $Total -gt 0
+    $frac = if ($hasTotal) { [double]$Received / $Total } else { ($Tick % 20) / 20.0 }
+    $pct = if ($hasTotal) { '{0,3}%' -f [int](100 * $frac) } else { ' --%' }
+    $mib = $Received / 1048576.0
+    $stats = '{0:0.0} MiB' -f $mib
+    if ($Seconds -ge 1) { $stats += ('  {0:0.0} MiB/s' -f ($mib / $Seconds)) }
+    $spin = $script:Spinner[$Tick % $script:Spinner.Count]
+    [Console]::Out.Write($script:Cr + '  ' + $c.Accent + $spin + $c.Reset + '  ' + $c.Info + '3/8' + $c.Reset + '  ' + $c.Text + $parts.Text + $c.Reset + ' ' +
+        $c.Muted + $parts.Leader + $c.Reset + '  ' + (Format-ProgressBar 16 $frac) + ' ' + $c.Accent + $pct + $c.Reset + '  ' + $c.Soft + $stats + $c.Reset + $script:Esc + '[K')
 }
 
 function Write-InstallerError([string]$Text, [string]$Hint) {
     if ($script:UseErrUi) {
-        $e = $script:Esc
-        [Console]::Error.WriteLine("$e[38;2;248;113;113mError:$e[0m $Text")
-        [Console]::Error.WriteLine("$e[38;2;56;189;248mHint:$e[0m  $Hint")
+        $c = $script:C
+        [Console]::Error.WriteLine('')
+        [Console]::Error.WriteLine('  ' + $c.Err + $script:G.Err + ' Error:' + $c.Reset + ' ' + $Text)
+        [Console]::Error.WriteLine('  ' + $c.Info + $script:G.Dot + ' Hint:' + $c.Reset + '  ' + $c.Soft + $Hint + $c.Reset)
+        [Console]::Error.WriteLine('')
     }
     else {
         [Console]::Error.WriteLine("Error: $Text")
@@ -258,6 +355,9 @@ function Get-HttpFile([string]$Url, [string]$Destination, [bool]$ShowUiBar = $tr
         $outputStream = [System.IO.File]::Create($Destination)
         try {
             $buffer = [byte[]]::new(81920)
+            $watch = [System.Diagnostics.Stopwatch]::StartNew()
+            $tick = 0
+            if ($script:UseUi -and $ShowUiBar) { [Console]::Out.Write($script:Esc + '[?25l') }
             [long]$received = 0
             $nextPercent = 25
             $lastDraw = [DateTime]::MinValue
@@ -268,12 +368,8 @@ function Get-HttpFile([string]$Url, [string]$Destination, [bool]$ShowUiBar = $tr
                     $now = [DateTime]::UtcNow
                     if (($now - $lastDraw).TotalMilliseconds -ge 90) {
                         $lastDraw = $now
-                        $frac = if ($total -and $total -gt 0) { [double]$received / $total } else { 0.5 }
-                        $pct = if ($total -and $total -gt 0) { '{0,3}%' -f [int](100 * $frac) } else { ' --%' }
-                        $mib = '{0:0.0}' -f ($received / 1048576.0)
-                        $bar = Format-GradientBar 20 $frac
-                        $e = $script:Esc
-                        [Console]::Out.Write("$($script:Cr)      [$bar] $e[38;2;34;211;238m$pct$e[0m  $e[38;2;148;163;184m$mib MiB$e[0m$e[K")
+                        Write-DownloadLine $received $total $watch.Elapsed.TotalSeconds $tick
+                        $tick++
                     }
                 }
                 else {
@@ -287,11 +383,8 @@ function Get-HttpFile([string]$Url, [string]$Destination, [bool]$ShowUiBar = $tr
                 }
             }
             if ($script:UseUi -and $ShowUiBar) {
-                $mib = '{0:0.0}' -f ($received / 1048576.0)
-                $bar = Format-GradientBar 20 1.0
-                $e = $script:Esc
-                [Console]::Out.Write("$($script:Cr)      [$bar] $e[38;2;52;211;153m100%$e[0m  $e[38;2;148;163;184m$mib MiB$e[0m$e[K")
-                [Console]::Out.Write([char]10)
+                [Console]::Out.Write($script:Cr + $script:Esc + '[K')
+                Write-Step '[3/8]' 'Downloading Drawplate' '[ok]' ('{0:0.0} MiB in {1}s' -f ($received / 1048576.0), [int][Math]::Round($watch.Elapsed.TotalSeconds))
             }
             else {
                 while ($nextPercent -le 100) {
@@ -301,6 +394,7 @@ function Get-HttpFile([string]$Url, [string]$Destination, [bool]$ShowUiBar = $tr
             }
         }
         finally {
+            if ($script:UseUi -and $ShowUiBar) { [Console]::Out.Write($script:Esc + '[?25h') }
             $outputStream.Dispose()
             $inputStream.Dispose()
         }
@@ -338,6 +432,7 @@ function Test-ProgramVersion([string]$Path, [string]$Expected) {
 
 function Invoke-DrawplateInstall {
     Enable-VirtualTerminal
+    Initialize-UiStyle
     $repo = $env:DRAWPLATE_REPO
     if (-not $repo) { $repo = 'migueljocode/Drawplate' }
     $baseUrl = $env:DRAWPLATE_BASE_URL
@@ -409,7 +504,7 @@ function Invoke-DrawplateInstall {
             Remove-Item -LiteralPath $dataDir -Force
         }
         Write-Step '[4/4]' 'Finishing .................' '[ok]' 'done'
-        Write-Ui 'Removed Drawplate. FFmpeg was not touched.'
+        Write-UiNote 'Removed Drawplate. FFmpeg was not touched.'
         return 0
     }
 
@@ -468,10 +563,11 @@ function Invoke-DrawplateInstall {
 
         Write-Step '[1/8]' 'Detecting platform .....' '[ok]' $rid
         Write-Step '[2/8]' 'Finding release ........' '[ok]' $tag
-        Write-Step '[3/8]' 'Downloading Drawplate ....' '' ''
+        if (-not $script:UseUi) { Write-Step '[3/8]' 'Downloading Drawplate ....' '' '' }
 
         if ($script:InstallerArguments.From) {
             Copy-Item -LiteralPath $script:InstallerArguments.From -Destination $archivePath
+            if ($script:UseUi) { Write-Step '[3/8]' 'Downloading Drawplate' '[ok]' ('{0:0.0} MiB in 0s' -f ((Get-Item -LiteralPath $archivePath).Length / 1048576.0)) }
             $expectedHash = $script:InstallerArguments.Sha256.ToLowerInvariant()
         }
         else {
@@ -563,12 +659,12 @@ function Invoke-DrawplateInstall {
             $entries += $binDir
             [Environment]::SetEnvironmentVariable('Path', ($entries -join ';'), 'User')
             [Environment]::SetEnvironmentVariable('Path', ($entries -join ';'), 'Process')
-            Write-Ui "Your user PATH was updated. Open a new terminal to use 'drawplate'."
+            Write-UiNote "Your user PATH was updated. Open a new terminal to use 'drawplate'."
         }
 
         $ffmpegMissing = -not (Get-Command ffmpeg -ErrorAction SilentlyContinue)
         if ($ffmpegMissing) {
-            Write-Ui 'FFmpeg was not found on this machine.'
+            Write-UiNote 'FFmpeg was not found on this machine.'
             if ($yes) {
                 try { & $binary setup } catch { Write-InstallerError 'Could not run Drawplate setup.' 'Run drawplate setup manually.' }
             }
