@@ -69,9 +69,12 @@ jobs:
           global-json-file: global.json
 
       - name: Publish Native AOT
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: >
           dotnet publish src/Drawplate.Console -c Release -r ${{ matrix.rid }}
-          -p:Version=${{ inputs.version }}
+          -p:Version=${INPUT_VERSION#v}
           -o publish
 
       - name: Smoke test
