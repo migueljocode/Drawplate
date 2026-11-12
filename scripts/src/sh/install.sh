@@ -103,14 +103,14 @@ if [ "$UNINSTALL" = "1" ]; then
 fi
 
 if [ -z "$VERSION" ]; then
-    LOCATION=$(curl -fsSI "$BASE_URL/latest" | awk 'BEGIN { IGNORECASE=1 } /^Location:/ { sub(/\r$/, "", $2); print $2; exit }')
+    LOCATION=$(curl -fsSI "$BASE_URL/latest" | awk 'tolower($1) == "location:" { sub(/\r$/, "", $2); print $2; exit }')
     VERSION=${LOCATION##*/}
 fi
 [ -n "$VERSION" ] || error "Could not find a release for $REPO." "Check your internet connection, or set DRAWPLATE_VERSION." 12
 TAG=$VERSION
 PKG_VERSION=${TAG#v}
 printf 'Drawplate installer %s\n' "$PKG_VERSION"
-ARCHIVE="drawplate-$PKG_VERSION-$RID.tar.gz"
+ARCHIVE="drawplate-$TAG-$RID.tar.gz"
 URL="$BASE_URL/download/$TAG/$ARCHIVE"
 
 mkdir -p "$DATA_DIR"
@@ -168,7 +168,7 @@ else
     SUMS_START=$(date +%s)
     curl -fsSL -o "$STAGING_DIR/SHA256SUMS" "$SUMS_URL" || error "Download failed: $SUMS_URL." "Retry." 12
     progress_complete "$STAGING_DIR/SHA256SUMS" "$SUMS_START"
-    EXPECTED_HASH=$(awk -v name="$ARCHIVE" '$2 == name { print $1; exit }' "$STAGING_DIR/SHA256SUMS")
+    EXPECTED_HASH=$(awk -v name="$ARCHIVE" '{ file = $2; sub(/^\.\//, "", file) } file == name { print $1; exit }' "$STAGING_DIR/SHA256SUMS")
 fi
 if [ -z "$EXPECTED_HASH" ] || [ "$EXPECTED_HASH" != "$ACTUAL_HASH" ]; then
     error "Checksum mismatch for $ARCHIVE." "Nothing was installed. Retry; if it repeats, report it." 13

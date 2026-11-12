@@ -24,7 +24,7 @@ make_archive() {
     folder=$1
     version=$2
     binary=$3
-    name="drawplate-$version-$RID.tar.gz"
+    name="drawplate-v$version-$RID.tar.gz"
     mkdir -p "$folder"
     cp "$binary" "$folder/drawplate"
     cp "$ROOT/LICENSE" "$folder/LICENSE"
@@ -35,7 +35,7 @@ import hashlib, pathlib, sys
 folder = pathlib.Path(sys.argv[1])
 name = sys.argv[2]
 digest = hashlib.sha256((folder / name).read_bytes()).hexdigest()
-(folder / "SHA256SUMS").write_text(f"{digest}  {name}\n", encoding="ascii")
+(folder / "SHA256SUMS").write_text(f"{digest}  ./{name}\n", encoding="ascii")
 PY
 }
 
@@ -132,11 +132,11 @@ printf '#!/bin/sh\nexit 1\n' > "$BAD_DIR/drawplate"
 chmod +x "$BAD_DIR/drawplate"
 cp "$ROOT/LICENSE" "$BAD_DIR/LICENSE"
 cp "$ROOT/THIRD-PARTY-NOTICES.md" "$BAD_DIR/THIRD-PARTY-NOTICES.md"
-tar -czf "$BAD_DIR/drawplate-1.2.4-$RID.tar.gz" -C "$BAD_DIR" drawplate LICENSE THIRD-PARTY-NOTICES.md
+tar -czf "$BAD_DIR/drawplate-v1.2.4-$RID.tar.gz" -C "$BAD_DIR" drawplate LICENSE THIRD-PARTY-NOTICES.md
 python3 - "$BAD_DIR" "$RID" <<'PY'
 import hashlib, pathlib, sys
 folder = pathlib.Path(sys.argv[1])
-name = "drawplate-1.2.4-" + sys.argv[2] + ".tar.gz"
+name = "drawplate-v1.2.4-" + sys.argv[2] + ".tar.gz"
 digest = hashlib.sha256((folder / name).read_bytes()).hexdigest()
 (folder / "SHA256SUMS").write_text(digest + "  " + name + "\n", encoding="ascii")
 PY

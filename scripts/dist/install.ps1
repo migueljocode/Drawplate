@@ -226,7 +226,7 @@ function Invoke-DrawplateInstall {
     $pkgVersion = $tag.TrimStart('v')
     Write-Ui "Drawplate installer $pkgVersion"
     $rid = 'win-x64'
-    $archive = "drawplate-$pkgVersion-$rid.zip"
+    $archive = "drawplate-$tag-$rid.zip"
     $url = "$baseUrl/download/$tag/$archive"
 
     New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
