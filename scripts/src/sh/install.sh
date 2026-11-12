@@ -55,7 +55,7 @@ ui_aurora_line() {
             printf "%s[38;2;%d;%d;%dm%s", esc, r, g, b, ch
         }
         printf "%s[0m\n", esc
-    }'
+    }' 2>/dev/null
 }
 
 ui_banner() {
