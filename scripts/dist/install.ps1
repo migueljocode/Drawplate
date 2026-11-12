@@ -26,14 +26,183 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
+$script:UseUi = (-not [Console]::IsOutputRedirected) -and (-not $env:NO_COLOR) -and ($env:TERM -ne 'dumb')
+$script:UseErrUi = (-not [Console]::IsErrorRedirected) -and (-not $env:NO_COLOR) -and ($env:TERM -ne 'dumb')
+$script:Esc = [string][char]27
+$script:Cr = [string][char]13
+
+function Enable-VirtualTerminal {
+    if (-not $script:UseUi -and -not $script:UseErrUi) { return }
+    try {
+        if (-not ('DrawplateInstaller.VtConsole' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace DrawplateInstaller {
+    public static class VtConsole {
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr GetStdHandle(int nStdHandle);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+        public static bool Enable() {
+            IntPtr handle = GetStdHandle(-11);
+            if (handle == IntPtr.Zero || handle == new IntPtr(-1)) return false;
+            uint mode;
+            if (!GetConsoleMode(handle, out mode)) return false;
+            if ((mode & 0x0004u) != 0) return true;
+            return SetConsoleMode(handle, mode | 0x0004u);
+        }
+    }
+}
+'@ -ErrorAction Stop | Out-Null
+        }
+        if (-not [DrawplateInstaller.VtConsole]::Enable()) {
+            $script:UseUi = $false
+            $script:UseErrUi = $false
+        }
+    }
+    catch {
+        $script:UseUi = $false
+        $script:UseErrUi = $false
+    }
+}
+
 function Write-Ui([string]$Text) {
     [Console]::Out.Write($Text)
     [Console]::Out.Write([char]10)
 }
 
+function Write-AuroraLine([string]$Text) {
+    if (-not $script:UseUi) {
+        Write-Ui $Text
+        return
+    }
+    $e = $script:Esc
+    $n = $Text.Length
+    if ($n -le 0) {
+        Write-Ui ''
+        return
+    }
+    $sb = [System.Text.StringBuilder]::new($n * 20)
+    for ($i = 0; $i -lt $n; $i++) {
+        $ch = $Text[$i]
+        if ($ch -eq ' ') {
+            [void]$sb.Append(' ')
+            continue
+        }
+        $t = if ($n -eq 1) { 0.0 } else { [double]$i / ($n - 1) }
+        if ($t -lt 0.5) {
+            $u = $t * 2.0
+            $r = [int](16 + (6 - 16) * $u)
+            $g = [int](185 + (182 - 185) * $u)
+            $b = [int](129 + (212 - 129) * $u)
+        }
+        else {
+            $u = ($t - 0.5) * 2.0
+            $r = [int](6 + (59 - 6) * $u)
+            $g = [int](182 + (130 - 182) * $u)
+            $b = [int](212 + (246 - 212) * $u)
+        }
+        [void]$sb.Append("$e[38;2;$r;$g;${b}m$ch")
+    }
+    [void]$sb.Append("$e[0m")
+    Write-Ui $sb.ToString()
+}
+
+function Write-Banner([string]$PkgVersion) {
+    if (-not $script:UseUi) {
+        Write-Ui "Drawplate installer $PkgVersion"
+        return
+    }
+    $e = $script:Esc
+    Write-Ui ''
+    Write-AuroraLine '  ____  ____      _    __        ______  _        _  _____ _____'
+    Write-AuroraLine ' |  _ \|  _ \    / \   \ \      / /  _ \| |      / \|_   _| ____|'
+    Write-AuroraLine ' | | | | |_) |  / _ \   \ \ /\ / /| |_) | |     / _ \ | | |  _|  '
+    Write-AuroraLine ' | |_| |  _ <  / ___ \   \ V  V / |  __/| |___ / ___ \| | | |___ '
+    Write-AuroraLine ' |____/|_| \_\/_/   \_\   \_/\_/  |_|   |_____/_/   \_\_| |_____|'
+    Write-Ui "  $e[38;2;148;163;184mDrawplate installer $e[38;2;34;211;238m$PkgVersion$e[0m"
+    Write-Ui ''
+}
+
+function Write-Step([string]$Tag, [string]$Label, [string]$Badge, [string]$Detail) {
+    if (-not $script:UseUi) {
+        if ($Detail) { Write-Ui "$Tag $Label $Badge $Detail" }
+        elseif ($Badge) { Write-Ui "$Tag $Label $Badge" }
+        else { Write-Ui "$Tag $Label" }
+        return
+    }
+    $e = $script:Esc
+    $badgeColor = switch ($Badge) {
+        '[ok]' { "$e[38;2;52;211;153m" }
+        '[skipped]' { "$e[38;2;100;116;139m" }
+        default { "$e[38;2;56;189;248m" }
+    }
+    $line = "  $e[38;2;56;189;248m$Tag$e[0m $e[38;2;241;245;249m$Label$e[0m"
+    if ($Badge) { $line += " $badgeColor$Badge$e[0m" }
+    if ($Detail) { $line += " $e[38;2;148;163;184m$Detail$e[0m" }
+    Write-Ui $line
+}
+
+function Write-DoneBox([string]$PkgVersion, [string]$BinaryPath) {
+    if (-not $script:UseUi) {
+        Write-Ui ''
+        Write-Ui "Installed Drawplate $PkgVersion to $BinaryPath"
+        Write-Ui 'Next:'
+        Write-Ui '  drawplate --help'
+        Write-Ui '  drawplate setup        (shows how to install FFmpeg)'
+        return
+    }
+    $e = $script:Esc
+    Write-Ui ''
+    Write-AuroraLine '  +--------------------------------------------------------------+'
+    Write-Ui "  $e[38;2;8;145;178m|$e[0m $e[38;2;52;211;153m[ok]$e[0m Installed Drawplate $e[38;2;34;211;238m$PkgVersion$e[0m"
+    Write-Ui "  $e[38;2;8;145;178m|$e[0m $e[38;2;148;163;184mPath:$e[0m $e[38;2;241;245;249m$BinaryPath$e[0m"
+    Write-Ui "  $e[38;2;8;145;178m|$e[0m $e[38;2;148;163;184mNext:$e[0m $e[38;2;56;189;248mdrawplate --help$e[0m  |  $e[38;2;56;189;248mdrawplate setup$e[0m"
+    Write-AuroraLine '  +--------------------------------------------------------------+'
+}
+
+function Format-GradientBar([int]$Width, [double]$Fraction) {
+    $e = $script:Esc
+    $filled = [Math]::Min($Width, [Math]::Max(0, [int][Math]::Round($Fraction * $Width)))
+    $sb = [System.Text.StringBuilder]::new($Width * 20)
+    for ($i = 0; $i -lt $Width; $i++) {
+        if ($i -lt $filled) {
+            $t = if ($Width -le 1) { 0.0 } else { [double]$i / ($Width - 1) }
+            if ($t -lt 0.5) {
+                $u = $t * 2.0
+                $r = [int](16 + (6 - 16) * $u)
+                $g = [int](185 + (182 - 185) * $u)
+                $b = [int](129 + (212 - 129) * $u)
+            }
+            else {
+                $u = ($t - 0.5) * 2.0
+                $r = [int](6 + (59 - 6) * $u)
+                $g = [int](182 + (130 - 182) * $u)
+                $b = [int](212 + (246 - 212) * $u)
+            }
+            [void]$sb.Append("$e[38;2;$r;$g;${b}m#")
+        }
+        else {
+            [void]$sb.Append("$e[38;2;30;41;59m-")
+        }
+    }
+    [void]$sb.Append("$e[0m")
+    return $sb.ToString()
+}
+
 function Write-InstallerError([string]$Text, [string]$Hint) {
-    [Console]::Error.WriteLine("Error: $Text")
-    [Console]::Error.WriteLine("Hint: $Hint")
+    if ($script:UseErrUi) {
+        $e = $script:Esc
+        [Console]::Error.WriteLine("$e[38;2;248;113;113mError:$e[0m $Text")
+        [Console]::Error.WriteLine("$e[38;2;56;189;248mHint:$e[0m  $Hint")
+    }
+    else {
+        [Console]::Error.WriteLine("Error: $Text")
+        [Console]::Error.WriteLine("Hint: $Hint")
+    }
 }
 
 function Get-Sha256([string]$Path) {
@@ -71,7 +240,7 @@ function Get-LatestTag([string]$BaseUrl) {
     }
 }
 
-function Get-HttpFile([string]$Url, [string]$Destination) {
+function Get-HttpFile([string]$Url, [string]$Destination, [bool]$ShowUiBar = $true) {
     Add-Type -AssemblyName System.Net.Http
     if ($PSVersionTable.PSEdition -ne 'Core') {
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
@@ -91,20 +260,44 @@ function Get-HttpFile([string]$Url, [string]$Destination) {
             $buffer = [byte[]]::new(81920)
             [long]$received = 0
             $nextPercent = 25
+            $lastDraw = [DateTime]::MinValue
             while (($read = $inputStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
                 $outputStream.Write($buffer, 0, $read)
                 $received += $read
-                if ($total -and $total -gt 0) {
-                    $percent = [int](100 * $received / $total)
-                    while ($percent -ge $nextPercent -and $nextPercent -le 100) {
-                        Write-Ui ("      {0}%" -f $nextPercent)
-                        $nextPercent += 25
+                if ($script:UseUi -and $ShowUiBar) {
+                    $now = [DateTime]::UtcNow
+                    if (($now - $lastDraw).TotalMilliseconds -ge 90) {
+                        $lastDraw = $now
+                        $frac = if ($total -and $total -gt 0) { [double]$received / $total } else { 0.5 }
+                        $pct = if ($total -and $total -gt 0) { '{0,3}%' -f [int](100 * $frac) } else { ' --%' }
+                        $mib = '{0:0.0}' -f ($received / 1048576.0)
+                        $bar = Format-GradientBar 20 $frac
+                        $e = $script:Esc
+                        [Console]::Out.Write("$($script:Cr)      [$bar] $e[38;2;34;211;238m$pct$e[0m  $e[38;2;148;163;184m$mib MiB$e[0m$e[K")
+                    }
+                }
+                else {
+                    if ($total -and $total -gt 0) {
+                        $percent = [int](100 * $received / $total)
+                        while ($percent -ge $nextPercent -and $nextPercent -le 100) {
+                            Write-Ui ("      {0}%" -f $nextPercent)
+                            $nextPercent += 25
+                        }
                     }
                 }
             }
-            while ($nextPercent -le 100) {
-                Write-Ui ("      {0}%" -f $nextPercent)
-                $nextPercent += 25
+            if ($script:UseUi -and $ShowUiBar) {
+                $mib = '{0:0.0}' -f ($received / 1048576.0)
+                $bar = Format-GradientBar 20 1.0
+                $e = $script:Esc
+                [Console]::Out.Write("$($script:Cr)      [$bar] $e[38;2;52;211;153m100%$e[0m  $e[38;2;148;163;184m$mib MiB$e[0m$e[K")
+                [Console]::Out.Write([char]10)
+            }
+            else {
+                while ($nextPercent -le 100) {
+                    Write-Ui ("      {0}%" -f $nextPercent)
+                    $nextPercent += 25
+                }
             }
         }
         finally {
@@ -144,14 +337,17 @@ function Test-ProgramVersion([string]$Path, [string]$Expected) {
 }
 
 function Invoke-DrawplateInstall {
+    Enable-VirtualTerminal
     $repo = $env:DRAWPLATE_REPO
     if (-not $repo) { $repo = 'migueljocode/Drawplate' }
     $baseUrl = $env:DRAWPLATE_BASE_URL
     if (-not $baseUrl) { $baseUrl = "https://github.com/$repo/releases" }
+
     if (-not $script:InstallerArguments.Version) { $script:InstallerArguments.Version = $env:DRAWPLATE_VERSION }
     if (-not $script:InstallerArguments.Dir) { $script:InstallerArguments.Dir = $env:DRAWPLATE_INSTALL_DIR }
     if (-not $script:InstallerArguments.From) { $script:InstallerArguments.From = $env:DRAWPLATE_FROM_ARCHIVE }
     if (-not $script:InstallerArguments.Sha256) { $script:InstallerArguments.Sha256 = $env:DRAWPLATE_SHA256 }
+
     $noSetup = [bool]$script:InstallerArguments.NoSetup
     $yes = [bool]$script:InstallerArguments.Yes
     $uninstall = [bool]$script:InstallerArguments.Uninstall
@@ -163,14 +359,17 @@ function Invoke-DrawplateInstall {
         Write-Ui 'Usage: install.ps1 [-Version <tag>] [-Dir <folder>] [-NoSetup] [-Yes] [-Uninstall] [-From <archive> -Sha256 <hash>] [-Help]'
         return 0
     }
+
     if ($script:InstallerArguments.From -and -not $script:InstallerArguments.Sha256) {
         Write-InstallerError '--sha256 is required with --from.' 'Provide the archive SHA-256 hash.'
         return 10
     }
+
     if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') {
         Write-InstallerError 'This PowerShell session blocks scripts.' 'Run: powershell -NoProfile -ExecutionPolicy Bypass -File .\\install.ps1'
         return 16
     }
+
     if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT -or -not [Environment]::Is64BitOperatingSystem) {
         Write-InstallerError 'Unsupported platform.' 'Supported: linux-x64, linux-arm64, osx-arm64, win-x64.'
         return 11
@@ -191,8 +390,8 @@ function Invoke-DrawplateInstall {
             }
             catch { Write-InstallerError 'The operation could not complete.' 'Check the error details and retry.' }
         }
-        Write-Ui '[1/4] Locating installation ..... [ok] done'
-        Write-Ui '[2/4] Removing files ............ [ok] done'
+        Write-Step '[1/4]' 'Locating installation .....' '[ok]' 'done'
+        Write-Step '[2/4]' 'Removing files ............' '[ok]' 'done'
         Remove-Item -LiteralPath $binary -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath "$binary.old" -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $manifest -Force -ErrorAction SilentlyContinue
@@ -202,14 +401,14 @@ function Invoke-DrawplateInstall {
             if ($entry -and $entry.TrimEnd('\','/') -ne $binDir.TrimEnd('\','/')) { $kept += $entry }
         }
         [Environment]::SetEnvironmentVariable('Path', ($kept -join ';'), 'User')
-        Write-Ui '[3/4] Updating PATH ............. [ok] done'
+        Write-Step '[3/4]' 'Updating PATH .............' '[ok]' 'done'
         if ((Test-Path -LiteralPath $binDir) -and -not (Get-ChildItem -LiteralPath $binDir -Force)) {
             Remove-Item -LiteralPath $binDir -Force
         }
         if ((Test-Path -LiteralPath $dataDir) -and -not (Get-ChildItem -LiteralPath $dataDir -Force)) {
             Remove-Item -LiteralPath $dataDir -Force
         }
-        Write-Ui '[4/4] Finishing ................. [ok] done'
+        Write-Step '[4/4]' 'Finishing .................' '[ok]' 'done'
         Write-Ui 'Removed Drawplate. FFmpeg was not touched.'
         return 0
     }
@@ -222,9 +421,11 @@ function Invoke-DrawplateInstall {
         Write-InstallerError "Could not find a release for $repo." 'Check your internet connection, or set DRAWPLATE_VERSION.'
         return 12
     }
+
     $tag = $script:InstallerArguments.Version
     $pkgVersion = $tag.TrimStart('v')
-    Write-Ui "Drawplate installer $pkgVersion"
+    Write-Banner $pkgVersion
+
     $rid = 'win-x64'
     $archive = "drawplate-$tag-$rid.zip"
     $url = "$baseUrl/download/$tag/$archive"
@@ -240,20 +441,22 @@ function Invoke-DrawplateInstall {
         Remove-Item -LiteralPath $lockDir -Recurse -Force
     }
     New-Item -ItemType Directory -Path $lockDir -Force | Out-Null
+
     $staging = Join-Path $binDir ('.drawplate-staging-' + [Guid]::NewGuid().ToString('N'))
     $repair = $false
     try {
         if ((Test-Path -LiteralPath $manifest) -and (Test-Path -LiteralPath $binary)) {
             $saved = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
             if ($saved.version -eq $pkgVersion -and (Get-Sha256 $binary) -eq $saved.binarySha256 -and (Test-ProgramVersion $binary $pkgVersion)) {
-                Write-Ui "[1/8] Detecting platform ..... [ok] $rid"
-                Write-Ui "[2/8] Finding release ........ [ok] $tag"
-                Write-Ui '[3/8] Downloading Drawplate .... [skipped] up to date'
-                Write-Ui '[4/8] Downloading checksums .... [skipped] up to date'
-                Write-Ui '[5/8] Verifying checksum ....... [skipped] up to date'
-                Write-Ui '[6/8] Installing ............. [skipped] up to date'
-                Write-Ui '[7/8] Checking the install .... [skipped] up to date'
-                Write-Ui '[8/8] Finishing .............. [ok] done'
+                Write-Step '[1/8]' 'Detecting platform .....' '[ok]' $rid
+                Write-Step '[2/8]' 'Finding release ........' '[ok]' $tag
+                Write-Step '[3/8]' 'Downloading Drawplate ....' '[skipped]' 'up to date'
+                Write-Step '[4/8]' 'Downloading checksums ....' '[skipped]' 'up to date'
+                Write-Step '[5/8]' 'Verifying checksum .......' '[skipped]' 'up to date'
+                Write-Step '[6/8]' 'Installing .............' '[skipped]' 'up to date'
+                Write-Step '[7/8]' 'Checking the install ....' '[skipped]' 'up to date'
+                Write-Step '[8/8]' 'Finishing ..............' '[ok]' 'done'
+                Write-DoneBox $pkgVersion $binary
                 return 0
             }
             $repair = $true
@@ -262,9 +465,11 @@ function Invoke-DrawplateInstall {
         New-Item -ItemType Directory -Path $binDir -Force | Out-Null
         New-Item -ItemType Directory -Path $staging -Force | Out-Null
         $archivePath = Join-Path $staging $archive
-        Write-Ui "[1/8] Detecting platform ..... [ok] $rid"
-        Write-Ui "[2/8] Finding release ........ [ok] $tag"
-        Write-Ui '[3/8] Downloading Drawplate ....'
+
+        Write-Step '[1/8]' 'Detecting platform .....' '[ok]' $rid
+        Write-Step '[2/8]' 'Finding release ........' '[ok]' $tag
+        Write-Step '[3/8]' 'Downloading Drawplate ....' '' ''
+
         if ($script:InstallerArguments.From) {
             Copy-Item -LiteralPath $script:InstallerArguments.From -Destination $archivePath
             $expectedHash = $script:InstallerArguments.Sha256.ToLowerInvariant()
@@ -273,7 +478,7 @@ function Invoke-DrawplateInstall {
             try {
                 Get-HttpFile $url $archivePath
                 $sumsPath = Join-Path $staging 'SHA256SUMS'
-                Get-HttpFile "$baseUrl/download/$tag/SHA256SUMS" $sumsPath
+                Get-HttpFile "$baseUrl/download/$tag/SHA256SUMS" $sumsPath $false
             }
             catch {
                 Write-InstallerError "Download failed: $url ($($_.Exception.Message))." 'Retry, or download the archive yourself and use --from <archive> --sha256 <hash>.'
@@ -286,13 +491,14 @@ function Invoke-DrawplateInstall {
             }
             $expectedHash = ($line -split '\s+')[0].ToLowerInvariant()
         }
+
         $actualHash = Get-Sha256 $archivePath
         if ($actualHash -ne $expectedHash) {
             Write-InstallerError "Checksum mismatch for $archive." 'Nothing was installed. Retry; if it repeats, report it.'
             return 13
         }
-        Write-Ui '[4/8] Downloading checksums .... [ok] done'
-        Write-Ui '[5/8] Verifying checksum ....... [ok] done'
+        Write-Step '[4/8]' 'Downloading checksums ....' '[ok]' 'done'
+        Write-Step '[5/8]' 'Verifying checksum .......' '[ok]' 'done'
 
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $zip = [System.IO.Compression.ZipFile]::OpenRead($archivePath)
@@ -306,10 +512,12 @@ function Invoke-DrawplateInstall {
         finally {
             $zip.Dispose()
         }
+
         $extractDir = Join-Path $staging 'x'
         [System.IO.Compression.ZipFile]::ExtractToDirectory($archivePath, $extractDir)
         if (Test-Path -LiteralPath $binary) { Move-Item -LiteralPath $binary -Destination "$binary.old" -Force }
         Move-Item -LiteralPath (Join-Path $extractDir 'drawplate.exe') -Destination $binary -Force
+
         if (-not (Test-ProgramVersion $binary $pkgVersion)) {
             Remove-Item -LiteralPath $binary -Force -ErrorAction SilentlyContinue
             if (Test-Path -LiteralPath "$binary.old") { Move-Item -LiteralPath "$binary.old" -Destination $binary -Force }
@@ -333,18 +541,15 @@ function Invoke-DrawplateInstall {
         Move-Item -LiteralPath $tempManifest -Destination $manifest -Force
 
         if ($repair) {
-            Write-Ui '[6/8] Installing ............. [ok] repairing'
+            Write-Step '[6/8]' 'Installing .............' '[ok]' 'repairing'
         }
         else {
-            Write-Ui '[6/8] Installing ............. [ok] done'
+            Write-Step '[6/8]' 'Installing .............' '[ok]' 'done'
         }
-        Write-Ui '[7/8] Checking the install .... [ok] done'
-        Write-Ui '[8/8] Finishing .............. [ok] done'
-        Write-Ui ''
-        Write-Ui "Installed Drawplate $pkgVersion to $binary"
-        Write-Ui 'Next:'
-        Write-Ui '  drawplate --help'
-        Write-Ui '  drawplate setup        (shows how to install FFmpeg)'
+        Write-Step '[7/8]' 'Checking the install ....' '[ok]' 'done'
+        Write-Step '[8/8]' 'Finishing ..............' '[ok]' 'done'
+        Write-DoneBox $pkgVersion $binary
+
         $currentPath = [Environment]::GetEnvironmentVariable('Path', 'User')
         $entries = @()
         foreach ($entry in ($currentPath -split ';')) {
@@ -360,6 +565,7 @@ function Invoke-DrawplateInstall {
             [Environment]::SetEnvironmentVariable('Path', ($entries -join ';'), 'Process')
             Write-Ui "Your user PATH was updated. Open a new terminal to use 'drawplate'."
         }
+
         $ffmpegMissing = -not (Get-Command ffmpeg -ErrorAction SilentlyContinue)
         if ($ffmpegMissing) {
             Write-Ui 'FFmpeg was not found on this machine.'

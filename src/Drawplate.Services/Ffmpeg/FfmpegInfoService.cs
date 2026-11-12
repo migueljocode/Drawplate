@@ -34,7 +34,12 @@ public sealed class FfmpegInfoService
             return FfmpegInfoResult.Broken("file not found");
         }
 
-        var (versionOutput, versionFailure) = await RunAsync(ffmpegPath, "-version", ct).ConfigureAwait(false);
+        // Probe -version and -encoders concurrently so cold FFmpeg discovery pays one startup round-trip instead of two.
+        var versionTask = RunAsync(ffmpegPath, "-version", ct);
+        var encodersTask = RunAsync(ffmpegPath, "-encoders", ct);
+        await Task.WhenAll(versionTask, encodersTask).ConfigureAwait(false);
+
+        var (versionOutput, versionFailure) = await versionTask.ConfigureAwait(false);
         if (versionFailure is not null)
         {
             return FfmpegInfoResult.Broken(versionFailure);
@@ -51,7 +56,7 @@ public sealed class FfmpegInfoService
             return FfmpegInfoResult.Old(version.Version);
         }
 
-        var (encodersOutput, encodersFailure) = await RunAsync(ffmpegPath, "-encoders", ct).ConfigureAwait(false);
+        var (encodersOutput, encodersFailure) = await encodersTask.ConfigureAwait(false);
         if (encodersFailure is not null)
         {
             return FfmpegInfoResult.Broken(encodersFailure);

@@ -9,6 +9,7 @@
     <StartupObject>Drawplate.Console.Program</StartupObject>
     <IsAotCompatible>true</IsAotCompatible>
     <PublishAot>true</PublishAot>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

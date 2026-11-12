@@ -1,23 +1,29 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Text;
 
 using Drawplate.Models.Formatting;
 
 namespace Drawplate.Console.Ui;
 
+/// <summary>Two-line synchronized progress display with 60fps-capable time-based Aurora shimmer.</summary>
 internal sealed class LiveProgress
 {
-    private const int BarWidth = 20;
+    private const int DefaultBarWidth = 28;
+    private const int CompactBarWidth = 20;
     private static readonly TimeSpan MinimumInterval = TimeSpan.FromMilliseconds(100);
 
     private readonly TextWriter _output;
     private readonly Theme _theme;
     private readonly TimeProvider _timeProvider;
     private readonly GlyphSet _glyphs;
+    private long _startTimestamp;
     private long _lastDraw;
     private bool _hasDrawn;
     private int _drawCount;
+    private int _activeIndex = -1;
+    private double _shownFraction;
 
     public LiveProgress(TextWriter output, Theme theme, TimeProvider timeProvider)
     {
@@ -44,42 +50,142 @@ internal sealed class LiveProgress
             return;
         }
 
+        if (!_hasDrawn)
+        {
+            _startTimestamp = now;
+        }
+
+        var dt = _hasDrawn ? _timeProvider.GetElapsedTime(_lastDraw, now).TotalSeconds : 0.1;
+        var animSeconds = _timeProvider.GetElapsedTime(_startTimestamp, now).TotalSeconds + (_drawCount * 0.04);
         _lastDraw = now;
         _hasDrawn = true;
 
-        var spinnerIndex = (int)((now / Math.Max(1, _timeProvider.TimestampFrequency / 10)) % _glyphs.Spinner.Length);
-        var spinner = _glyphs.Spinner[spinnerIndex];
-        var first = $"{spinner} [{index.ToString(CultureInfo.InvariantCulture)}/{total.ToString(CultureInfo.InvariantCulture)}] {Sanitizer.ForDisplay(name)}";
-        var normalized = fraction.HasValue ? Math.Clamp(fraction.Value, 0, 1) : (double?)null;
-        var filled = normalized.HasValue
-            ? Math.Clamp((int)Math.Round(BarWidth * normalized.Value, MidpointRounding.AwayFromZero), 0, BarWidth)
-            : 0;
-        var bar = Repeat(_glyphs.BarFull, filled) + Repeat(_glyphs.BarEmpty, BarWidth - filled);
+        if (_activeIndex != index)
+        {
+            _activeIndex = index;
+            _shownFraction = 0.0;
+        }
+
+        var normalized = fraction.HasValue ? Math.Clamp(fraction.Value, 0.0, 1.0) : (double?)null;
+        if (normalized.HasValue)
+        {
+            _shownFraction = normalized.Value <= 0.0
+                ? 0.0
+                : Gradient.Glide(_shownFraction, normalized.Value, Math.Max(0.05, dt), rate: 10.0);
+        }
+
+        var frame = _drawCount;
+        var spinnerColor = Gradient.Wave(Palette.AuroraBright, animSeconds * 0.25, 0.0);
+        var spinner = _glyphs.Spinner[Math.Abs(frame) % _glyphs.Spinner.Length];
+        var safeName = Sanitizer.ForDisplay(name);
+        var maxWidth = Math.Max(40, _theme.Width - 2);
+
+        var countText = $"[{index.ToString(CultureInfo.InvariantCulture)}/{total.ToString(CultureInfo.InvariantCulture)}]";
+        var firstPlain = $"{spinner} {countText} {safeName}";
+        var first = _theme.Colors
+            ? AnsiText.ClipVisible(
+                $"{spinnerColor.Fg()}{spinner}{Rgb.Reset} {Palette.Sky.Fg()}{countText}{Rgb.Reset} {Palette.TextPrimary.Fg()}{safeName}{Rgb.Reset}",
+                maxWidth)
+            : AnsiText.ClipVisible(firstPlain, maxWidth);
+
+        var barWidth = _theme.Colors && _theme.Utf8Glyphs && maxWidth >= 66 ? DefaultBarWidth : CompactBarWidth;
+        string bar;
+        if (_theme.Colors && _theme.Utf8Glyphs)
+        {
+            bar = normalized.HasValue
+                ? Gradient.BarAt(barWidth, _shownFraction, Palette.Aurora, animSeconds, utf8: true)
+                : Gradient.IndeterminateBarAt(barWidth, animSeconds, utf8: true);
+        }
+        else if (_theme.Colors)
+        {
+            bar = normalized.HasValue
+                ? Gradient.BarAt(barWidth, normalized.Value, Palette.Aurora, animSeconds, utf8: false)
+                : new string('-', barWidth);
+        }
+        else
+        {
+            var filled = normalized.HasValue
+                ? Math.Clamp((int)Math.Round(barWidth * normalized.Value, MidpointRounding.AwayFromZero), 0, barWidth)
+                : 0;
+            bar = Repeat(_glyphs.BarFull, filled) + Repeat(_glyphs.BarEmpty, barWidth - filled);
+        }
+
         var percent = normalized.HasValue
             ? $"{Math.Round(normalized.Value * 100, MidpointRounding.AwayFromZero).ToString(CultureInfo.InvariantCulture)}%"
             : "--%";
         var speedText = speed.HasValue ? $"{speed.Value.ToString("0.0", CultureInfo.InvariantCulture)}x" : "--x";
-        var second = $"{bar}  {percent}  {speedText}  elapsed {HumanFormat.Time(elapsed)}";
+        var elapsedText = HumanFormat.Time(elapsed);
+
+        string? etaText = null;
         if (normalized is > 0 and < 1)
         {
             var etaSeconds = elapsed.TotalSeconds * (1 - normalized.Value) / normalized.Value;
             var eta = TimeSpan.FromSeconds(Math.Min(etaSeconds, TimeSpan.MaxValue.TotalSeconds));
-            second += $"  eta {HumanFormat.Time(eta)}";
+            etaText = HumanFormat.Time(eta);
         }
 
+        string second;
+        if (_theme.Colors && _theme.Utf8Glyphs)
+        {
+            var sb = new StringBuilder(160);
+            sb.Append(bar)
+                .Append("  ")
+                .Append(Palette.Cyan.Fg()).Append(percent.PadLeft(4)).Append(Rgb.Reset)
+                .Append("  ")
+                .Append(Palette.Emerald.Fg()).Append(speedText).Append(Rgb.Reset)
+                .Append("  ")
+                .Append(Palette.TextMuted.Fg()).Append("elapsed ").Append(Palette.TextSecondary.Fg()).Append(elapsedText).Append(Rgb.Reset);
+            if (etaText is not null)
+            {
+                sb.Append("  ").Append(Palette.TextMuted.Fg()).Append("eta ").Append(Palette.Sky.Fg()).Append(etaText).Append(Rgb.Reset);
+            }
+
+            second = AnsiText.ClipVisible(sb.ToString(), maxWidth);
+        }
+        else if (_theme.Colors)
+        {
+            var sb = new StringBuilder(160);
+            sb.Append(Palette.TextSecondary.Fg()).Append(bar).Append("  ").Append(percent).Append(Rgb.Reset)
+                .Append("  ")
+                .Append(Palette.Emerald.Fg()).Append(speedText).Append(Rgb.Reset)
+                .Append("  ")
+                .Append(Palette.TextMuted.Fg()).Append("elapsed ").Append(Palette.TextSecondary.Fg()).Append(elapsedText).Append(Rgb.Reset);
+            if (etaText is not null)
+            {
+                sb.Append("  ").Append(Palette.TextMuted.Fg()).Append("eta ").Append(Palette.Sky.Fg()).Append(etaText).Append(Rgb.Reset);
+            }
+
+            second = AnsiText.ClipVisible(sb.ToString(), maxWidth);
+        }
+        else
+        {
+            second = $"{bar}  {percent}  {speedText}  elapsed {elapsedText}";
+            if (etaText is not null)
+            {
+                second += $"  eta {etaText}";
+            }
+
+            second = AnsiText.ClipVisible(second, maxWidth);
+        }
+
+        var frameBuilder = new StringBuilder(256);
         if (_theme.Colors)
         {
-            first = $"\u001b[36m{first}\u001b[0m";
-            second = $"\u001b[32m{second}\u001b[0m";
+            frameBuilder.Append("\u001b[?2026h");
         }
 
         if (_drawCount > 0)
         {
-            _output.Write("\r\u001b[2K\u001b[1A\r\u001b[2K");
+            frameBuilder.Append("\r\u001b[2K\u001b[1A\r\u001b[2K");
         }
 
-        _output.WriteLine(first);
-        _output.Write(second);
+        frameBuilder.Append(first).Append('\n').Append(second);
+        if (_theme.Colors)
+        {
+            frameBuilder.Append("\u001b[K\u001b[?2026l");
+        }
+
+        _output.Write(frameBuilder.ToString());
         _output.Flush();
         _drawCount++;
     }
@@ -91,7 +197,7 @@ internal sealed class LiveProgress
             return;
         }
 
-        _output.Write("\r\u001b[2K\u001b[1A\r\u001b[2K\r");
+        _output.Write("\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[0m");
         _output.Flush();
         _drawCount = 0;
         _hasDrawn = false;

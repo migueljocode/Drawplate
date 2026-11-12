@@ -9,10 +9,15 @@ internal static class RendererFactory
     {
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(theme);
-        var plain = new PlainRenderer(output, theme.Utf8Glyphs);
-        return theme.CanRedraw
-            ? new TerminalRenderer(plain, new LiveProgress(output, theme, timeProvider ?? TimeProvider.System))
-            : plain;
+        if (!theme.CanRedraw)
+        {
+            return new PlainRenderer(output, theme.Utf8Glyphs);
+        }
+
+        IRenderer baseRenderer = theme.Colors
+            ? new RichRenderer(output, theme)
+            : new PlainRenderer(output, theme.Utf8Glyphs);
+        return new TerminalRenderer(baseRenderer, new LiveProgress(output, theme, timeProvider ?? TimeProvider.System));
     }
 
     private sealed class TerminalRenderer(IRenderer inner, LiveProgress progress) : IRenderer
